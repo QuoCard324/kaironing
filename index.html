@@ -3,306 +3,343 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>エクストリームカイロニング Official Rules & Guide</title>
+  <title>エクストリームカイロニング - Play Game</title>
   <style>
     :root {
       --bg-color: #0f172a;
       --card-bg: #1e293b;
-      --card-border: #334155;
-      --text-color: #f8fafc;
-      --text-sub: #94a3b8;
       --primary: #ff6b00;
-      --primary-hover: #ff8533;
       --accent: #38bdf8;
       --danger: #f43f5e;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: var(--bg-color);
-      color: var(--text-color);
-      line-height: 1.6;
-      padding: 20px 16px 60px;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
     }
 
-    .container {
-      max-width: 800px;
-      margin: 0 auto;
-    }
-
-    header {
-      text-align: center;
-      margin-bottom: 32px;
-      padding-top: 20px;
-    }
-
-    .badge {
-      display: inline-block;
-      background-color: rgba(255, 107, 0, 0.15);
-      color: var(--primary);
-      border: 1px solid var(--primary);
-      font-size: 0.85rem;
-      font-weight: bold;
-      padding: 4px 12px;
-      border-radius: 20px;
-      margin-bottom: 12px;
-      letter-spacing: 0.05em;
-    }
-
-    h1 {
-      font-size: 2.2rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      background: linear-gradient(135deg, #ffffff 0%, var(--primary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 8px;
-    }
-
-    p.subtitle {
-      color: var(--text-sub);
-      font-size: 0.95rem;
-    }
-
-    .section {
-      background-color: var(--card-bg);
-      border: 1px solid var(--card-border);
+    h1 { margin-bottom: 10px; font-size: 1.8rem; text-align: center; color: var(--primary); }
+    
+    .scoreboard {
+      display: flex;
+      gap: 40px;
+      background: var(--card-bg);
+      padding: 15px 30px;
       border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 24px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+      margin-bottom: 15px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
+    .player-score { text-align: center; }
+    .player-score .name { font-size: 0.9rem; color: #94a3b8; }
+    .player-score .pts { font-size: 2rem; font-weight: bold; color: var(--accent); }
 
-    .section-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: #ffffff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 16px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--card-border);
-    }
-
-    .section-title::before {
-      content: "";
-      display: inline-block;
-      width: 4px;
-      height: 18px;
-      background-color: var(--primary);
-      border-radius: 2px;
-    }
-
-    .item-box {
-      background-color: rgba(255, 255, 255, 0.03);
-      border: 1px dashed var(--primary);
-      border-radius: 8px;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
+    .game-status {
+      height: 30px;
       font-weight: bold;
+      color: #f1f5f9;
+      margin-bottom: 10px;
+      text-align: center;
     }
 
-    ul.rule-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    ul.rule-list li {
-      position: relative;
-      padding-left: 20px;
-      color: #cbd5e1;
-    }
-
-    ul.rule-list li::before {
-      content: "•";
-      color: var(--primary);
-      font-weight: bold;
-      position: absolute;
-      left: 0;
-      top: 0;
-    }
-
-    .highlight-box {
-      background-color: rgba(244, 63, 94, 0.1);
-      border-left: 3px solid var(--danger);
-      padding: 12px 16px;
-      border-radius: 0 8px 8px 0;
-      margin-top: 12px;
-      font-size: 0.9rem;
-      color: #fecdd3;
-    }
-
-    .tech-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-    }
-
-    .tech-card {
-      background-color: rgba(15, 23, 42, 0.6);
-      border: 1px solid var(--card-border);
+    #gameCanvas {
+      background: #1e293b;
+      border: 3px solid #334155;
       border-radius: 8px;
-      padding: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
     }
 
-    .tech-name {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 6px;
-    }
-
-    .tech-desc {
-      font-size: 0.9rem;
-      color: var(--text-sub);
-    }
-
-    .tips-list {
+    .controls-hint {
+      margin-top: 15px;
       display: flex;
-      flex-direction: column;
-      gap: 10px;
+      gap: 20px;
+      max-width: 800px;
+      width: 100%;
     }
-
-    .tip-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      background-color: rgba(15, 23, 42, 0.4);
+    .ctrl-card {
+      flex: 1;
+      background: var(--card-bg);
       padding: 12px;
       border-radius: 8px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
     }
-
-    .tip-num {
-      background-color: var(--primary);
-      color: #ffffff;
-      font-weight: bold;
-      font-size: 0.8rem;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    footer {
-      text-align: center;
-      color: var(--text-sub);
-      font-size: 0.8rem;
-      margin-top: 40px;
+    .ctrl-card h3 { color: var(--primary); margin-bottom: 6px; }
+    kbd {
+      background: #475569;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
     }
   </style>
 </head>
 <body>
 
-  <div class="container">
-    <header>
-      <span class="badge">OFFICIAL GAME GUIDE</span>
-      <h1>エクストリームカイロニング</h1>
-      <p class="subtitle">カイロを駆使して戦う、精密かつスリリングな極限競技</p>
-    </header>
+  <h1>🔥 エクストリームカイロニング GAME</h1>
 
-    <!-- 必要な物 -->
-    <div class="section">
-      <h2 class="section-title">必要な物</h2>
-      <div class="item-box">
-        <span>🔥</span>
-        <span>大きいカイロ (1個)</span>
-      </div>
+  <div class="scoreboard">
+    <div class="player-score">
+      <div class="name">1P (左)</div>
+      <div class="pts" id="score1">0</div>
     </div>
-
-    <!-- 競技ルール -->
-    <div class="section">
-      <h2 class="section-title">基本ルール & サーブ</h2>
-      <ul class="rule-list">
-        <li><strong>先攻の決定：</strong> 最初にじゃんけんを行い、勝ったほうが先攻となる。</li>
-        <li><strong>サーブ権の移行：</strong> 点数が入った後は、直前に点数を入れた人のターン（サーブ）となる。</li>
-        <li><strong>デュース規定：</strong> 同点でどちらもマッチポイントを迎えた場合、デュースを行う（上限は大会・規定の表を参照）。</li>
-      </ul>
+    <div style="font-size: 1.5rem; align-self: center;">VS</div>
+    <div class="player-score">
+      <div class="name">2P (右)</div>
+      <div class="pts" id="score2">0</div>
     </div>
-
-    <!-- 攻撃とレシーブの制限 -->
-    <div class="section">
-      <h2 class="section-title">攻撃・レシーブの判定基準</h2>
-      <ul class="rule-list">
-        <li><strong>攻撃形態：</strong> 攻撃は片手のみ。肩より上からの発射は認められない。</li>
-        <li><strong>パス・レシーブ上限：</strong> 1ターン内でのレシーブと攻撃は合計で最大5回まで。</li>
-        <li><strong>許容エリア：</strong> 相手に届く際、「腰の高さ〜頭の上」の範囲へ送らなければならない。</li>
-        <li><strong>アウト判定の特例：</strong> 腰より下、または頭より上へ飛んだ場合、原則相手の得点。ただし、相手がその反則カイロに反応して取りに行き失敗した場合、自分の得点となる。（反応したかどうかは個人の良心に委ねられる）</li>
-      </ul>
-
-      <div class="highlight-box">
-        <strong>⚠️ 移動・足の制限（注意）</strong><br>
-        【レシーブ時】 移動は片足の一歩までセーフ。<br>
-        【攻撃時】 足の踏み出しは一切禁止。一歩踏み出して捕カイロした後は、必ず元の位置に戻ってから攻撃すること。
-      </div>
-    </div>
-
-    <!-- 確認されているカイロ種一覧 -->
-    <div class="section">
-      <h2 class="section-title">確認されているカイロ種一覧</h2>
-      <div class="tech-grid">
-        <div class="tech-card">
-          <div class="tech-name">ストレート</div>
-          <div class="tech-desc">真っ直ぐ飛ばす基本技。圧倒的な威力とスピードで相手をねじ伏せる。</div>
-        </div>
-
-        <div class="tech-card">
-          <div class="tech-name">ライズ</div>
-          <div class="tech-desc">膝の高さくらいから飛ばして相手の胴体に当てる。狙う場所によっては拾うのが非常に困難で有効。</div>
-        </div>
-
-        <div class="tech-card">
-          <div class="tech-name">ナックル</div>
-          <div class="tech-desc">無回転で不規則に軌道が変化する。腰あたりへの攻撃で威力を発揮する。</div>
-        </div>
-
-        <div class="tech-card">
-          <div class="tech-name">スライド</div>
-          <div class="tech-desc">利き手から放ち、相手の胴体左側を逸れていく。相手視点では左から自分の利き手側へ一直線に飛んでくるため、思わず手を出して取りに行き、反則誘導にかかりやすい。</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 勝つためのコツ -->
-    <div class="section">
-      <h2 class="section-title">勝利のためのコツ</h2>
-      <div class="tips-list">
-        <div class="tip-item">
-          <div class="tip-num">1</div>
-          <div><strong>相手の肩周辺を狙う：</strong> キャッチしにくい絶妙な高さを攻める。</div>
-        </div>
-        <div class="tip-item">
-          <div class="tip-num">2</div>
-          <div><strong>フェイントを入れる：</strong> 飛ばすふりをして相手のタイミングや体制を崩す。</div>
-        </div>
-        <div class="tip-item">
-          <div class="tip-num">3</div>
-          <div><strong>緩急と高低差：</strong> 変化カイロとストレートを組み合わせ、速度差と高低差で翻弄する。</div>
-        </div>
-        <div class="tip-item">
-          <div class="tip-num">4</div>
-          <div><strong>タイミングをずらす：</strong> 返すまでのレシーブ回数を毎回バラバラにして相手のテンポを狂わせる。</div>
-        </div>
-      </div>
-    </div>
-
-    <footer>
-      <p>&copy; Extreme Kaironing Association. All Rights Reserved.</p>
-    </footer>
   </div>
 
+  <div class="game-status" id="statusText">じゃんけん中... キーを押してスタート</div>
+
+  <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+  <div class="controls-hint">
+    <div class="ctrl-card">
+      <h3>1P 操作 (左側)</h3>
+      <p>移動: <kbd>A</kbd> <kbd>D</kbd> (1歩のみ/戻る)</p>
+      <p>ショット: <kbd>W</kbd>(ライズ) / <kbd>S</kbd>(ストレート) / <kbd>Q</kbd>(スライド)</p>
+    </div>
+    <div class="ctrl-card">
+      <h3>2P 操作 (右側)</h3>
+      <p>移動: <kbd>←</kbd> <kbd>→</kbd> (1歩のみ/戻る)</p>
+      <p>ショット: <kbd>↑</kbd>(ライズ) / <kbd>↓</kbd>(ストレート) / <kbd>Shift</kbd>(スライド)</p>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // ゲーム状態
+    let state = 'START'; // START, PLAYING, GAMEOVER
+    let score1 = 0, score2 = 0;
+    let turn = 1; // 1 or 2
+    let touches = 0; // 1ターン内のレシーブ+攻撃回数 (最大5)
+    let statusMsg = "スペースキーを押してじゃんけん（先攻決定）";
+
+    // プレイヤーオブジェクト
+    const p1 = { x: 100, originX: 100, y: 280, w: 30, h: 70, vx: 0, handY: 290 };
+    const p2 = { x: 670, originX: 670, y: 280, w: 30, h: 70, vx: 0, handY: 290 };
+
+    // カイロ（ボール）
+    const kairo = {
+      x: 100, y: 290, vx: 0, vy: 0,
+      active: false, holder: 1, size: 14, type: 'normal'
+    };
+
+    // キー入力状態
+    const keys = {};
+
+    window.addEventListener('keydown', e => {
+      keys[e.key] = true;
+
+      if (state === 'START' && e.code === 'Space') {
+        // じゃんけん
+        turn = Math.random() < 0.5 ? 1 : 2;
+        statusMsg = `じゃんけん結果: ${turn}P 先攻！`;
+        resetRound(turn);
+        state = 'PLAYING';
+      }
+
+      if (state === 'PLAYING') {
+        handleShoot(e);
+      }
+    });
+
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    function resetRound(server) {
+      turn = server;
+      touches = 0;
+      p1.x = p1.originX;
+      p2.x = p2.originX;
+      kairo.active = false;
+      kairo.holder = server;
+      kairo.vx = 0;
+      kairo.vy = 0;
+      kairo.x = server === 1 ? p1.x + 20 : p2.x - 20;
+      kairo.y = p1.handY;
+    }
+
+    function addScore(player) {
+      if (player === 1) score1++;
+      else score2++;
+
+      document.getElementById('score1').innerText = score1;
+      document.getElementById('score2').innerText = score2;
+
+      // 勝利判定
+      if ((score1 >= 5 || score2 >= 5) && Math.abs(score1 - score2) >= 2) {
+        state = 'GAMEOVER';
+        statusMsg = `ゲーム終了！ ${score1 > score2 ? '1P' : '2P'} の勝利！`;
+      } else {
+        statusMsg = `${player}P 得点！ ${player}P のサーブ`;
+        resetRound(player);
+      }
+    }
+
+    function handleShoot(e) {
+      // 1Pのショット
+      if (kairo.holder === 1) {
+        // 元の位置に戻っていないと攻撃不可（一歩踏み出しルール）
+        if (Math.abs(p1.x - p1.originX) > 5) return;
+
+        if (e.key === 's' || e.key === 'S') shootKairo(1, 10, -1, 'straight');
+        if (e.key === 'w' || e.key === 'W') shootKairo(1, 8, -6, 'rise'); // 膝下からライズ
+        if (e.key === 'q' || e.key === 'Q') shootKairo(1, 7, -2, 'slide'); // スライド
+      }
+
+      // 2Pのショット
+      if (kairo.holder === 2) {
+        if (Math.abs(p2.x - p2.originX) > 5) return;
+
+        if (e.key === 'ArrowDown') shootKairo(2, -10, -1, 'straight');
+        if (e.key === 'ArrowUp') shootKairo(2, -8, -6, 'rise');
+        if (e.key === 'Shift') shootKairo(2, -7, -2, 'slide');
+      }
+    }
+
+    function shootKairo(player, vx, vy, type) {
+      kairo.holder = 0;
+      kairo.active = true;
+      kairo.vx = vx;
+      kairo.vy = vy;
+      kairo.type = type;
+      touches++;
+      statusMsg = `${player}P の攻撃！ (${touches}/5タッチ)`;
+    }
+
+    function update() {
+      if (state !== 'PLAYING') return;
+
+      // 移動制限（片足1歩＝30pxまで移動可能）
+      if (keys['a'] || keys['A']) p1.x = Math.max(p1.originX - 35, p1.x - 3);
+      if (keys['d'] || keys['D']) p1.x = Math.min(p1.originX + 35, p1.x + 3);
+
+      if (keys['ArrowLeft']) p2.x = Math.max(p2.originX - 35, p2.x - 3);
+      if (keys['ArrowRight']) p2.x = Math.min(p2.originX + 35, p2.x + 3);
+
+      // カイロを持ってるときは追従
+      if (kairo.holder === 1) { kairo.x = p1.x + 20; kairo.y = p1.handY; }
+      if (kairo.holder === 2) { kairo.x = p2.x - 20; kairo.y = p2.handY; }
+
+      // 飛行処理
+      if (kairo.active) {
+        kairo.x += kairo.vx;
+        kairo.y += kairo.vy;
+
+        // 変化球処理
+        if (kairo.type === 'slide') {
+          kairo.vy += 0.15; // 軌道が逸れていく
+        } else {
+          kairo.vy += 0.25; // 通常重力
+        }
+
+        // 5タッチ制限超過
+        if (touches > 5) {
+          statusMsg = "5タッチ超過アウト！";
+          addScore(turn === 1 ? 2 : 1);
+          return;
+        }
+
+        // レシーブキャッチ判定
+        let target = (kairo.vx > 0) ? p2 : p1;
+        let targetNum = (kairo.vx > 0) ? 2 : 1;
+
+        if (Math.abs(kairo.x - target.x) < 25 && Math.abs(kairo.y - target.y) < 50) {
+          // 高低差チェック（腰〜頭の範囲か）
+          const headY = target.y;
+          const waistY = target.y + 35;
+
+          if (kairo.y < headY || kairo.y > waistY) {
+            // 反則高低差に手を出して取れなかった場合等の判定
+            statusMsg = "アウト高低のカイロを無理にキャッチ！相手得点！";
+            addScore(targetNum === 1 ? 2 : 1);
+          } else {
+            // 正常キャッチ
+            kairo.active = false;
+            kairo.holder = targetNum;
+            turn = targetNum;
+            statusMsg = `${targetNum}P キャッチ！元の位置に戻って攻撃してください。`;
+          }
+        }
+
+        // 床・画面外に落ちた場合（アウト判定）
+        if (kairo.y > 350 || kairo.x < 0 || kairo.x > 800) {
+          // 判定：高すぎ/低すぎの場所で落ちたか
+          if (kairo.y > 320) {
+            statusMsg = "腰より低い位置へ落下（アウト）！";
+          } else {
+            statusMsg = "エリア外へ落下！";
+          }
+          // 最後に投げた方の反対へ得点
+          addScore(kairo.vx > 0 ? 1 : 2);
+        }
+      }
+
+      document.getElementById('statusText').innerText = statusMsg;
+    }
+
+    function draw() {
+      // 背景
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // コート・床
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 350); ctx.lineTo(800, 350);
+      ctx.stroke();
+
+      // ネット（境界線）
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(400, 100); ctx.lineTo(400, 350);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 1P描画
+      ctx.fillStyle = '#ff6b00';
+      ctx.fillRect(p1.x - p1.w/2, p1.y, p1.w, p1.h);
+      // 1P足元ホーム範囲
+      ctx.strokeStyle = 'rgba(255,107,0,0.3)';
+      ctx.strokeRect(p1.originX - 35, 345, 70, 5);
+
+      // 2P描画
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(p2.x - p2.w/2, p2.y, p2.w, p2.h);
+      // 2P足元ホーム範囲
+      ctx.strokeStyle = 'rgba(56,189,248,0.3)';
+      ctx.strokeRect(p2.originX - 35, 345, 70, 5);
+
+      // カイロ描画
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.arc(kairo.x, kairo.y, kairo.size, 0, Math.PI * 2);
+      ctx.fill();
+
+      // カイロの「温もり」オーラ
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.4)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(kairo.x, kairo.y, kairo.size + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
 </body>
 </html>
