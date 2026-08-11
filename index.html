@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>エクストリームカイロニング - Play Game</title>
+  <title>エクストリームカイロニング - 3D/1P Game</title>
   <style>
     :root {
-      --bg-color: #0f172a;
+      --bg-color: #0b0f19;
       --card-bg: #1e293b;
       --primary: #ff6b00;
       --accent: #38bdf8;
@@ -15,101 +15,185 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background-color: var(--bg-color);
       color: #fff;
       display: flex;
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      padding: 20px;
+      padding: 15px;
+      user-select: none;
     }
 
-    h1 { margin-bottom: 10px; font-size: 1.8rem; text-align: center; color: var(--primary); }
-    
+    h1 { font-size: 1.6rem; color: var(--primary); margin-bottom: 10px; }
+
     .scoreboard {
       display: flex;
-      gap: 40px;
+      align-items: center;
+      gap: 30px;
       background: var(--card-bg);
-      padding: 15px 30px;
+      padding: 10px 25px;
       border-radius: 12px;
-      margin-bottom: 15px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+      margin-bottom: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
-    .player-score { text-align: center; }
-    .player-score .name { font-size: 0.9rem; color: #94a3b8; }
-    .player-score .pts { font-size: 2rem; font-weight: bold; color: var(--accent); }
+    .score-box { text-align: center; }
+    .score-label { font-size: 0.8rem; color: #94a3b8; }
+    .score-num { font-size: 2rem; font-weight: bold; }
+    #playerScore { color: var(--accent); }
+    #aiScore { color: var(--danger); }
 
-    .game-status {
-      height: 30px;
+    .status-banner {
+      font-size: 1.1rem;
       font-weight: bold;
       color: #f1f5f9;
+      background: rgba(30, 41, 59, 0.8);
+      padding: 8px 16px;
+      border-radius: 20px;
       margin-bottom: 10px;
-      text-align: center;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #334155;
+    }
+
+    .viewport-container {
+      position: relative;
+      width: 700px;
+      height: 420px;
+      border: 3px solid #334155;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.7);
     }
 
     #gameCanvas {
-      background: #1e293b;
-      border: 3px solid #334155;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      width: 100%;
+      height: 100%;
+      background: #000;
     }
 
-    .controls-hint {
-      margin-top: 15px;
+    .ui-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
       display: flex;
-      gap: 20px;
-      max-width: 800px;
-      width: 100%;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 15px;
     }
-    .ctrl-card {
-      flex: 1;
+
+    .action-btn-container {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .action-btn {
+      background: linear-gradient(135deg, #ff6b00, #ff8533);
+      border: none;
+      color: white;
+      padding: 12px 18px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+      transition: all 0.1s;
+    }
+    .action-btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+    .action-btn:active { transform: translateY(1px); }
+    .action-btn:disabled { background: #475569; cursor: not-allowed; transform: none; opacity: 0.6; }
+
+    .janken-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(15, 23, 42, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      pointer-events: auto;
+    }
+    .janken-btn {
+      font-size: 2rem;
+      padding: 15px 25px;
+      border-radius: 50%;
+      border: 2px solid var(--primary);
       background: var(--card-bg);
-      padding: 12px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .janken-btn:hover { transform: scale(1.15); background: var(--primary); }
+
+    .controls-hint {
+      margin-top: 12px;
+      background: var(--card-bg);
+      padding: 10px 20px;
       border-radius: 8px;
       font-size: 0.85rem;
       color: #cbd5e1;
+      display: flex;
+      gap: 20px;
     }
-    .ctrl-card h3 { color: var(--primary); margin-bottom: 6px; }
     kbd {
       background: #475569;
       padding: 2px 6px;
       border-radius: 4px;
       font-family: monospace;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
 
-  <h1>🔥 エクストリームカイロニング GAME</h1>
+  <h1>🔥 エクストリームカイロニング (VS AI)</h1>
 
   <div class="scoreboard">
-    <div class="player-score">
-      <div class="name">1P (左)</div>
-      <div class="pts" id="score1">0</div>
+    <div class="score-box">
+      <div class="score-label">YOU (あなた)</div>
+      <div class="score-num" id="playerScore">0</div>
     </div>
-    <div style="font-size: 1.5rem; align-self: center;">VS</div>
-    <div class="player-score">
-      <div class="name">2P (右)</div>
-      <div class="pts" id="score2">0</div>
+    <div style="font-size: 1.2rem; color: #64748b; font-weight: bold;">VS</div>
+    <div class="score-box">
+      <div class="score-label">AI (相手)</div>
+      <div class="score-num" id="aiScore">0</div>
     </div>
   </div>
 
-  <div class="game-status" id="statusText">じゃんけん中... キーを押してスタート</div>
+  <div class="status-banner" id="statusText">じゃんけんで先攻を決めましょう！</div>
 
-  <canvas id="gameCanvas" width="800" height="400"></canvas>
+  <div class="viewport-container">
+    <canvas id="gameCanvas" width="700" height="420"></canvas>
+
+    <!-- じゃんけん選択UI -->
+    <div class="janken-overlay" id="jankenModal">
+      <h2>じゃんけんの手を選んでください</h2>
+      <div style="display: flex; gap: 20px;">
+        <button class="janken-btn" onclick="playJanken('rock')">✊</button>
+        <button class="janken-btn" onclick="playJanken('scissors')">✌️</button>
+        <button class="janken-btn" onclick="playJanken('paper')">✋</button>
+      </div>
+    </div>
+
+    <!-- 投球操作ボタン (画面上から直接クリックも可能) -->
+    <div class="action-btn-container" id="actionControls" style="display: none;">
+      <button class="action-btn" id="btnStraight" onclick="playerShoot('straight')">ストレート <br><small>(キー: S)</small></button>
+      <button class="action-btn" id="btnRise" onclick="playerShoot('rise')">ライズ <br><small>(キー: W)</small></button>
+      <button class="action-btn" id="btnSlide" onclick="playerShoot('slide')">スライド <br><small>(キー: Q)</small></button>
+    </div>
+  </div>
 
   <div class="controls-hint">
-    <div class="ctrl-card">
-      <h3>1P 操作 (左側)</h3>
-      <p>移動: <kbd>A</kbd> <kbd>D</kbd> (1歩のみ/戻る)</p>
-      <p>ショット: <kbd>W</kbd>(ライズ) / <kbd>S</kbd>(ストレート) / <kbd>Q</kbd>(スライド)</p>
-    </div>
-    <div class="ctrl-card">
-      <h3>2P 操作 (右側)</h3>
-      <p>移動: <kbd>←</kbd> <kbd>→</kbd> (1歩のみ/戻る)</p>
-      <p>ショット: <kbd>↑</kbd>(ライズ) / <kbd>↓</kbd>(ストレート) / <kbd>Shift</kbd>(スライド)</p>
-    </div>
+    <div><b>移動 (片足1歩):</b> <kbd>A</kbd> 左移動 / <kbd>D</kbd> 右移動</div>
+    <div><b>投げ技:</b> <kbd>S</kbd> ストレート / <kbd>W</kbd> ライズ / <kbd>Q</kbd> スライド</div>
   </div>
 
   <script>
@@ -117,229 +201,324 @@
     const ctx = canvas.getContext('2d');
 
     // ゲーム状態
-    let state = 'START'; // START, PLAYING, GAMEOVER
-    let score1 = 0, score2 = 0;
-    let turn = 1; // 1 or 2
-    let touches = 0; // 1ターン内のレシーブ+攻撃回数 (最大5)
-    let statusMsg = "スペースキーを押してじゃんけん（先攻決定）";
+    let state = 'JANKEN'; // JANKEN, READY, FLYING, GAMEOVER
+    let playerScore = 0, aiScore = 0;
+    let turn = 'player'; // 'player' or 'ai'
+    let touches = 0;
 
-    // プレイヤーオブジェクト
-    const p1 = { x: 100, originX: 100, y: 280, w: 30, h: 70, vx: 0, handY: 290 };
-    const p2 = { x: 670, originX: 670, y: 280, w: 30, h: 70, vx: 0, handY: 290 };
+    // 一人称視点プレイヤー＆相手AIの位置（疑似3D空間 coordinates）
+    // Z軸: 0(自分) ~ 500(相手AI)
+    // X軸: -150(左) ~ 150(右)
+    // Y軸: -100(頭) ~ 100(足元)
+    const player = { x: 0, originX: 0, y: 0 };
+    const ai = { x: 0, originX: 0, y: 0, targetX: 0 };
 
     // カイロ（ボール）
     const kairo = {
-      x: 100, y: 290, vx: 0, vy: 0,
-      active: false, holder: 1, size: 14, type: 'normal'
+      x: 0, y: 50, z: 0,
+      vx: 0, vy: 0, vz: 0,
+      type: 'straight'
     };
 
-    // キー入力状態
+    // 移動キー
     const keys = {};
-
     window.addEventListener('keydown', e => {
-      keys[e.key] = true;
-
-      if (state === 'START' && e.code === 'Space') {
-        // じゃんけん
-        turn = Math.random() < 0.5 ? 1 : 2;
-        statusMsg = `じゃんけん結果: ${turn}P 先攻！`;
-        resetRound(turn);
-        state = 'PLAYING';
-      }
-
-      if (state === 'PLAYING') {
-        handleShoot(e);
+      keys[e.key.toLowerCase()] = true;
+      if (state === 'READY' && turn === 'player') {
+        if (e.key.toLowerCase() === 's') playerShoot('straight');
+        if (e.key.toLowerCase() === 'w') playerShoot('rise');
+        if (e.key.toLowerCase() === 'q') playerShoot('slide');
       }
     });
+    window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
-    window.addEventListener('keyup', e => { keys[e.key] = false; });
+    // じゃんけん処理
+    function playJanken(playerChoice) {
+      const choices = ['rock', 'scissors', 'paper'];
+      const aiChoice = choices[Math.floor(Math.random() * 3)];
+      const names = { rock: '✊', scissors: '✌️', paper: '✋' };
 
-    function resetRound(server) {
-      turn = server;
-      touches = 0;
-      p1.x = p1.originX;
-      p2.x = p2.originX;
-      kairo.active = false;
-      kairo.holder = server;
-      kairo.vx = 0;
-      kairo.vy = 0;
-      kairo.x = server === 1 ? p1.x + 20 : p2.x - 20;
-      kairo.y = p1.handY;
-    }
+      document.getElementById('jankenModal').style.display = 'none';
 
-    function addScore(player) {
-      if (player === 1) score1++;
-      else score2++;
+      if (playerChoice === aiChoice) {
+        setStatus(`あいこ！ (あなた:${names[playerChoice]} vs AI:${names[aiChoice]}) もう一度！`);
+        setTimeout(() => { document.getElementById('jankenModal').style.display = 'flex'; }, 1000);
+        return;
+      }
 
-      document.getElementById('score1').innerText = score1;
-      document.getElementById('score2').innerText = score2;
-
-      // 勝利判定
-      if ((score1 >= 5 || score2 >= 5) && Math.abs(score1 - score2) >= 2) {
-        state = 'GAMEOVER';
-        statusMsg = `ゲーム終了！ ${score1 > score2 ? '1P' : '2P'} の勝利！`;
+      const winMap = { rock: 'scissors', scissors: 'paper', paper: 'rock' };
+      if (winMap[playerChoice] === aiChoice) {
+        turn = 'player';
+        setStatus(`じゃんけん勝ち！ (${names[playerChoice]} vs ${names[aiChoice]}) あなたの先攻です`);
       } else {
-        statusMsg = `${player}P 得点！ ${player}P のサーブ`;
-        resetRound(player);
+        turn = 'ai';
+        setStatus(`じゃんけん負け... (${names[playerChoice]} vs ${names[aiChoice]}) AIの先攻です`);
+      }
+
+      startTurn();
+    }
+
+    function setStatus(msg) {
+      document.getElementById('statusText').innerText = msg;
+    }
+
+    function startTurn() {
+      state = 'READY';
+      player.x = player.originX;
+      ai.x = ai.originX;
+
+      const controls = document.getElementById('actionControls');
+      if (turn === 'player') {
+        controls.style.display = 'flex';
+        setButtonsEnabled(true);
+        setStatus("あなたのターン！技ボタンかキー(S/W/Q)で攻撃してください");
+        kairo.x = player.x; kairo.y = 40; kairo.z = 20;
+      } else {
+        controls.style.display = 'none';
+        setStatus("AIのターン... 身構えてください！");
+        kairo.x = ai.x; kairo.y = 0; kairo.z = 480;
+        setTimeout(aiShoot, 1500); // AIが考えて投げる演出の間隔
       }
     }
 
-    function handleShoot(e) {
-      // 1Pのショット
-      if (kairo.holder === 1) {
-        // 元の位置に戻っていないと攻撃不可（一歩踏み出しルール）
-        if (Math.abs(p1.x - p1.originX) > 5) return;
-
-        if (e.key === 's' || e.key === 'S') shootKairo(1, 10, -1, 'straight');
-        if (e.key === 'w' || e.key === 'W') shootKairo(1, 8, -6, 'rise'); // 膝下からライズ
-        if (e.key === 'q' || e.key === 'Q') shootKairo(1, 7, -2, 'slide'); // スライド
-      }
-
-      // 2Pのショット
-      if (kairo.holder === 2) {
-        if (Math.abs(p2.x - p2.originX) > 5) return;
-
-        if (e.key === 'ArrowDown') shootKairo(2, -10, -1, 'straight');
-        if (e.key === 'ArrowUp') shootKairo(2, -8, -6, 'rise');
-        if (e.key === 'Shift') shootKairo(2, -7, -2, 'slide');
-      }
+    function setButtonsEnabled(enabled) {
+      document.getElementById('btnStraight').disabled = !enabled;
+      document.getElementById('btnRise').disabled = !enabled;
+      document.getElementById('btnSlide').disabled = !enabled;
     }
 
-    function shootKairo(player, vx, vy, type) {
-      kairo.holder = 0;
-      kairo.active = true;
-      kairo.vx = vx;
-      kairo.vy = vy;
-      kairo.type = type;
+    function playerShoot(type) {
+      if (state !== 'READY' || turn !== 'player') return;
+
+      // 一歩足を踏み出していると投げられないルール
+      if (Math.abs(player.x - player.originX) > 10) {
+        setStatus("⚠️ 一歩踏み出したままでは攻撃できません！元の位置に戻ってください");
+        return;
+      }
+
+      state = 'FLYING';
+      setButtonsEnabled(false);
       touches++;
-      statusMsg = `${player}P の攻撃！ (${touches}/5タッチ)`;
+
+      kairo.type = type;
+      kairo.z = 20;
+      kairo.vz = 14; // 向こう側へ飛ぶ
+
+      if (type === 'straight') { kairo.vx = (Math.random() - 0.5) * 2; kairo.vy = -2; }
+      if (type === 'rise')     { kairo.vx = 0; kairo.vy = -7; } // 低い位置から浮き上がる
+      if (type === 'slide')    { kairo.vx = -6; kairo.vy = -1; } // 横へ逸れる
+
+      setStatus(`あなた「${type.toUpperCase()}！」(タッチ: ${touches}/5)`);
+    }
+
+    function aiShoot() {
+      if (state !== 'READY' || turn !== 'ai') return;
+
+      state = 'FLYING';
+      touches++;
+
+      const types = ['straight', 'rise', 'slide'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      kairo.type = type;
+      kairo.z = 480;
+      kairo.vz = -13; // 手前（プレイヤー）へ飛ぶ
+
+      // プレイヤーを揺さぶる軌道設計
+      if (type === 'straight') { kairo.vx = (Math.random() - 0.5) * 3; kairo.vy = 0; }
+      if (type === 'rise')     { kairo.vx = 0; kairo.vy = 6; }
+      if (type === 'slide')    { kairo.vx = 7; kairo.vy = 0; }
+
+      setStatus(`AIが「${type.toUpperCase()}」を放ってきた！キャッチしてください！`);
+    }
+
+    function addScore(winner) {
+      if (winner === 'player') playerScore++;
+      else aiScore++;
+
+      document.getElementById('playerScore').innerText = playerScore;
+      document.getElementById('aiScore').innerText = aiScore;
+
+      if ((playerScore >= 5 || aiScore >= 5) && Math.abs(playerScore - aiScore) >= 2) {
+        state = 'GAMEOVER';
+        setStatus(`🏆 ゲーム終了！ ${playerScore > aiScore ? 'あなたの勝利！' : 'AIの勝利...'}`);
+        document.getElementById('actionControls').style.display = 'none';
+      } else {
+        turn = winner;
+        setTimeout(startTurn, 2000);
+      }
     }
 
     function update() {
-      if (state !== 'PLAYING') return;
+      // 片足1歩の左右移動処理 (A / D)
+      if (keys['a']) player.x = Math.max(player.originX - 45, player.x - 3);
+      if (keys['d']) player.x = Math.min(player.originX + 45, player.x + 3);
 
-      // 移動制限（片足1歩＝30pxまで移動可能）
-      if (keys['a'] || keys['A']) p1.x = Math.max(p1.originX - 35, p1.x - 3);
-      if (keys['d'] || keys['D']) p1.x = Math.min(p1.originX + 35, p1.x + 3);
-
-      if (keys['ArrowLeft']) p2.x = Math.max(p2.originX - 35, p2.x - 3);
-      if (keys['ArrowRight']) p2.x = Math.min(p2.originX + 35, p2.x + 3);
-
-      // カイロを持ってるときは追従
-      if (kairo.holder === 1) { kairo.x = p1.x + 20; kairo.y = p1.handY; }
-      if (kairo.holder === 2) { kairo.x = p2.x - 20; kairo.y = p2.handY; }
-
-      // 飛行処理
-      if (kairo.active) {
-        kairo.x += kairo.vx;
-        kairo.y += kairo.vy;
-
-        // 変化球処理
-        if (kairo.type === 'slide') {
-          kairo.vy += 0.15; // 軌道が逸れていく
-        } else {
-          kairo.vy += 0.25; // 通常重力
-        }
-
-        // 5タッチ制限超過
-        if (touches > 5) {
-          statusMsg = "5タッチ超過アウト！";
-          addScore(turn === 1 ? 2 : 1);
-          return;
-        }
-
-        // レシーブキャッチ判定
-        let target = (kairo.vx > 0) ? p2 : p1;
-        let targetNum = (kairo.vx > 0) ? 2 : 1;
-
-        if (Math.abs(kairo.x - target.x) < 25 && Math.abs(kairo.y - target.y) < 50) {
-          // 高低差チェック（腰〜頭の範囲か）
-          const headY = target.y;
-          const waistY = target.y + 35;
-
-          if (kairo.y < headY || kairo.y > waistY) {
-            // 反則高低差に手を出して取れなかった場合等の判定
-            statusMsg = "アウト高低のカイロを無理にキャッチ！相手得点！";
-            addScore(targetNum === 1 ? 2 : 1);
-          } else {
-            // 正常キャッチ
-            kairo.active = false;
-            kairo.holder = targetNum;
-            turn = targetNum;
-            statusMsg = `${targetNum}P キャッチ！元の位置に戻って攻撃してください。`;
-          }
-        }
-
-        // 床・画面外に落ちた場合（アウト判定）
-        if (kairo.y > 350 || kairo.x < 0 || kairo.x > 800) {
-          // 判定：高すぎ/低すぎの場所で落ちたか
-          if (kairo.y > 320) {
-            statusMsg = "腰より低い位置へ落下（アウト）！";
-          } else {
-            statusMsg = "エリア外へ落下！";
-          }
-          // 最後に投げた方の反対へ得点
-          addScore(kairo.vx > 0 ? 1 : 2);
-        }
+      // AIのレシーブ自動移動
+      if (state === 'FLYING' && kairo.vz > 0) {
+        ai.x += (kairo.x - ai.x) * 0.08;
       }
 
-      document.getElementById('statusText').innerText = statusMsg;
+      // カイロの飛行物理
+      if (state === 'FLYING') {
+        kairo.x += kairo.vx;
+        kairo.y += kairo.vy;
+        kairo.z += kairo.vz;
+
+        // スライド変化球のカーブ効果
+        if (kairo.type === 'slide') {
+          kairo.vx += (kairo.vz > 0) ? 0.2 : -0.2;
+        }
+
+        // --- 相手AIへの到達判定 (Z >= 500) ---
+        if (kairo.z >= 500) {
+          state = 'READY';
+          const dist = Math.abs(kairo.x - ai.x);
+          const isOut = (kairo.y < -60 || kairo.y > 60); // アウト高さ判定
+
+          if (isOut) {
+            if (dist < 40) {
+              // アウト球に反応して取りに行った場合
+              setStatus("AIがアウトコースのカイロに手を出してミス！あなたの得点！");
+              addScore('player');
+            } else {
+              setStatus("アウトコースへの失敗投球！AIの得点！");
+              addScore('ai');
+            }
+          } else if (dist < 50) {
+            // 正常キャッチ
+            turn = 'ai';
+            setStatus("AIがキャッチ！AIの攻撃です");
+            setTimeout(startTurn, 1000);
+          } else {
+            // 取り損ね
+            setStatus("AIが捕カイロ失敗！あなたの得点！");
+            addScore('player');
+          }
+        }
+
+        // --- プレイヤー（手前）への到達判定 (Z <= 0) ---
+        if (kairo.z <= 0) {
+          state = 'READY';
+          const dist = Math.abs(kairo.x - player.x);
+          const isOut = (kairo.y > 60 || kairo.y < -60); // 腰より下 または 頭より上
+
+          if (isOut) {
+            if (dist < 50) {
+              setStatus("アウトコースに反応して手を出してしまった！AIの得点！");
+              addScore('ai');
+            } else {
+              setStatus("AIの投球が判定エリア外！見送ってあなたの得点！");
+              addScore('player');
+            }
+          } else if (dist < 55) {
+            // キャッチ成功
+            turn = 'player';
+            setStatus("見事キャッチ！元の位置（真ん中）に戻って攻撃してください");
+            document.getElementById('actionControls').style.display = 'flex';
+            setButtonsEnabled(true);
+          } else {
+            // 取り損ね
+            setStatus("キャッチ失敗... AIの得点！");
+            addScore('ai');
+          }
+        }
+      }
     }
 
+    // --- 一人称 3D 描画処理 ---
     function draw() {
-      // 背景
+      // 空間の背景（体育館風）
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // コート・床
-      ctx.strokeStyle = '#334155';
+      // パースペクティブ（遠近感）計算関数
+      function project(x, y, z) {
+        const scale = 300 / (300 + z);
+        return {
+          px: canvas.width / 2 + (x - player.x) * scale,
+          py: canvas.height / 2 + y * scale,
+          s: scale
+        };
+      }
+
+      // 3D 遠近グリッド床
+      ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 2;
+      for (let z = 0; z <= 500; z += 50) {
+        const p1 = project(-200, 100, z);
+        const p2 = project(200, 100, z);
+        ctx.beginPath();
+        ctx.moveTo(p1.px, p1.py);
+        ctx.lineTo(p2.px, p2.py);
+        ctx.stroke();
+      }
+
+      // サイドライン
+      const lineLeftNear = project(-150, 100, 0);
+      const lineLeftFar = project(-150, 100, 500);
+      const lineRightNear = project(150, 100, 0);
+      const lineRightFar = project(150, 100, 500);
+
+      ctx.strokeStyle = '#334155';
       ctx.beginPath();
-      ctx.moveTo(0, 350); ctx.lineTo(800, 350);
+      ctx.moveTo(lineLeftNear.px, lineLeftNear.py); ctx.lineTo(lineLeftFar.px, lineLeftFar.py);
+      ctx.moveTo(lineRightNear.px, lineRightNear.py); ctx.lineTo(lineRightFar.px, lineRightFar.py);
       ctx.stroke();
 
-      // ネット（境界線）
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(400, 100); ctx.lineTo(400, 350);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // 1P描画
-      ctx.fillStyle = '#ff6b00';
-      ctx.fillRect(p1.x - p1.w/2, p1.y, p1.w, p1.h);
-      // 1P足元ホーム範囲
-      ctx.strokeStyle = 'rgba(255,107,0,0.3)';
-      ctx.strokeRect(p1.originX - 35, 345, 70, 5);
-
-      // 2P描画
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(p2.x - p2.w/2, p2.y, p2.w, p2.h);
-      // 2P足元ホーム範囲
-      ctx.strokeStyle = 'rgba(56,189,248,0.3)';
-      ctx.strokeRect(p2.originX - 35, 345, 70, 5);
-
-      // カイロ描画
-      ctx.fillStyle = '#f43f5e';
-      ctx.beginPath();
-      ctx.arc(kairo.x, kairo.y, kairo.size, 0, Math.PI * 2);
-      ctx.fill();
-
-      // カイロの「温もり」オーラ
-      ctx.strokeStyle = 'rgba(244, 63, 94, 0.4)';
+      // ネット（中央 Z=250）
+      const nL = project(-150, 40, 250);
+      const nR = project(150, 40, 250);
+      const nLb = project(-150, 100, 250);
+      ctx.strokeStyle = '#475569';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(kairo.x, kairo.y, kairo.size + 4, 0, Math.PI * 2);
+      ctx.moveTo(nL.px, nL.py); ctx.lineTo(nR.px, nR.py);
+      ctx.moveTo(nL.px, nL.py); ctx.lineTo(nLb.px, nLb.py);
+      ctx.stroke();
+
+      // 相手AIの描画（奥 Z=500）
+      const aiPos = project(ai.x, 20, 500);
+      ctx.fillStyle = '#f43f5e';
+      ctx.fillRect(aiPos.px - 15 * aiPos.s, aiPos.py - 40 * aiPos.s, 30 * aiPos.s, 60 * aiPos.s);
+      // AIの頭
+      ctx.beginPath();
+      ctx.arc(aiPos.px, aiPos.py - 50 * aiPos.s, 12 * aiPos.s, 0, Math.PI * 2);
+      ctx.fill();
+
+      // カイロの描画（3D位置）
+      if (state === 'FLYING' || state === 'READY') {
+        const kPos = project(kairo.x, kairo.y, kairo.z);
+        const radius = Math.max(5, 18 * kPos.s);
+
+        // カイロ本体
+        ctx.fillStyle = '#ff6b00';
+        ctx.beginPath();
+        ctx.arc(kPos.px, kPos.py, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 軌道・オーラ
+        ctx.strokeStyle = 'rgba(255, 107, 0, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(kPos.px, kPos.py, radius + 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 自分の視界ガイド（足元の可動範囲線）
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height - 20, 45, Math.PI, 0);
       ctx.stroke();
     }
 
-    function loop() {
+    function gameLoop() {
       update();
       draw();
-      requestAnimationFrame(loop);
+      requestAnimationFrame(gameLoop);
     }
 
-    loop();
+    gameLoop();
   </script>
 </body>
 </html>
