@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <title>大東亜戦術ボードゲーム</title>
   <style>
+    /* 全体デザイン（明るい配色） */
     body {
       font-family: sans-serif;
-      background-color: #1a1a1a;
-      color: #fff;
+      background-color: #f0f2f5;
+      color: #333;
       text-align: center;
       margin: 0;
       padding: 15px;
@@ -24,21 +25,21 @@
     /* 14x14ボード */
     #board {
       display: grid;
-      grid-template-columns: repeat(14, 42px);
-      grid-template-rows: repeat(14, 42px);
+      grid-template-columns: repeat(14, 46px);
+      grid-template-rows: repeat(14, 46px);
       gap: 1px;
-      background-color: #444;
-      border: 3px solid #666;
+      background-color: #888;
+      border: 3px solid #555;
     }
 
     .cell {
-      width: 42px;
-      height: 42px;
+      width: 46px;
+      height: 46px;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-size: 8px;
+      font-size: 9px;
       font-weight: bold;
       cursor: pointer;
       user-select: none;
@@ -46,32 +47,50 @@
       position: relative;
     }
 
-    /* マス目の属性色（縦向き：0~2連合陸 / 3~10海 / 11~13軸心陸） */
-    .cell.land-allies { background-color: #4a2c2c; } 
-    .cell.sea { background-color: #1a3a5c; }         
-    .cell.land-axis { background-color: #2c4a2c; }   
+    /* マス目の属性色：自他問わず陸は黄緑、海は青に統一 */
+    .cell.land { background-color: #a8e6cf; } /* 明るい黄緑 */
+    .cell.sea { background-color: #aed9e0; }  /* 明るい青 */
 
-    /* 視界外（戦場の霧） */
+    /* 視界外（影） */
     .cell.fog {
-      background-color: #111 !important;
-      opacity: 0.8;
+      background-color: #78909c !important; /* グレー表示 */
+      opacity: 0.65;
     }
 
-    .cell.selected { border: 2px solid #ffc107; z-index: 10; }
+    .cell.selected { border: 3px solid #ffc107; z-index: 10; }
 
     /* ユニット表示 */
     .unit {
-      width: 90%;
-      padding: 1px;
-      border-radius: 3px;
+      width: 92%;
+      padding: 2px 1px;
+      border-radius: 4px;
       color: white;
       font-size: 8px;
       line-height: 1.1;
       text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
-    .unit.axis { background-color: #b22222; }   /* 軸心国: 赤 */
-    .unit.allies { background-color: #1e90ff; } /* 連合国: 青 */
-    .unit.unknown { background-color: #555; }  /* 未確認敵機 */
+    .unit.axis { background-color: #dc3545; }   /* 軸心国: 赤 */
+    .unit.allies { background-color: #0d6efd; } /* 連合国: 青 */
+
+    /* HPバーのスタイル */
+    .hp-bar-bg {
+      width: 85%;
+      height: 4px;
+      background-color: #444;
+      border-radius: 2px;
+      margin-top: 2px;
+      overflow: hidden;
+    }
+    .hp-bar-fill {
+      height: 100%;
+      background-color: #28a745; /* 緑色ゲージ */
+      transition: width 0.2s;
+    }
 
     #controls {
       display: flex;
@@ -85,29 +104,30 @@
       gap: 6px;
       width: 200px;
       min-height: 200px;
-      background-color: #2a2a2a;
-      border: 1px solid #444;
+      background-color: #fff;
+      border: 1px solid #ccc;
       padding: 10px;
       border-radius: 8px;
     }
 
     .card {
       padding: 8px;
-      border: 1px solid #555;
+      border: 1px solid #aaa;
       border-radius: 5px;
-      background-color: #3a3a3a;
+      background-color: #fff8dc;
       cursor: pointer;
       font-size: 11px;
       text-align: left;
+      color: #333;
     }
-    .card.selected { background-color: #5a4a1a; border-color: #ffc107; }
+    .card.selected { background-color: #ffe8a1; border-color: #ffc107; border-width: 2px; }
 
     .status-text {
       font-weight: bold;
       font-size: 1.2em;
     }
-    .axis-text { color: #ff6b6b; }
-    .allies-text { color: #64b5f6; }
+    .axis-text { color: #dc3545; }
+    .allies-text { color: #0d6efd; }
   </style>
 </head>
 <body>
@@ -115,7 +135,7 @@
   <h1>大東亜戦術ボードゲーム (14x14)</h1>
   <div id="game-info">
     <p>現在のターン: <span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
-    <p style="color: #aaa; font-size: 0.85em;">※自分のユニットから半径2マス以内のみ視界が通ります</p>
+    <p style="color: #666; font-size: 0.85em;">※自軍ユニットの周囲2マスのみ視界が通ります（グレーのマスは視界外）</p>
   </div>
 
   <div id="game-container">
@@ -127,7 +147,7 @@
   </div>
 
   <script>
-    // ユニットパラメータ設定
+    // ユニットデータ設定
     const CARD_TYPES = [
       { name: "歩兵",       type: "land", hp: 20, maxHp: 20, atk: 10 },
       { name: "軽戦車",     type: "land", hp: 30, maxHp: 30, atk: 15 },
@@ -157,13 +177,12 @@
       return { ...CARD_TYPES[rand] };
     }
 
-    // 視界（Fog of War）計算：自軍ユニットから2マス以内か判別
+    // 周囲2マス以内かの視界判定
     function isVisible(r, c, owner) {
       for (let br = 0; br < 14; br++) {
         for (let bc = 0; bc < 14; bc++) {
           const unit = board[br][bc];
           if (unit && unit.owner === owner) {
-            // Chebyshev距離（周囲2マス）
             if (Math.max(Math.abs(br - r), Math.abs(bc - c)) <= 2) {
               return true;
             }
@@ -192,12 +211,11 @@
           const cell = document.createElement("div");
           cell.classList.add("cell");
 
-          // マス目属性 (14x14 : 0~2連合陸 / 3~10海 / 11~13軸心陸)
-          if (r <= 2) cell.classList.add("land-allies");
-          else if (r >= 11) cell.classList.add("land-axis");
+          // マス目属性（陸はすべて黄緑、海はすべて青）
+          if (r <= 2 || r >= 11) cell.classList.add("land");
           else cell.classList.add("sea");
 
-          // 索敵（視界）の適応
+          // 視界チェック
           const visible = isVisible(r, c, currentTurn);
           if (!visible) {
             cell.classList.add("fog");
@@ -208,23 +226,25 @@
           }
 
           const unit = board[r][c];
-          if (unit) {
-            // 自分のユニット、または視界内の敵ユニットを表示
-            if (unit.owner === currentTurn || visible) {
-              const unitEl = document.createElement("div");
-              unitEl.classList.add("unit", unit.owner);
-              
-              let name = unit.name;
-              if (unit.type === "land" && r >= 3 && r <= 10) name = "輸送船";
+          // 自分のユニット、または視界内の敵のみ描画
+          if (unit && (unit.owner === currentTurn || visible)) {
+            const unitEl = document.createElement("div");
+            unitEl.classList.add("unit", unit.owner);
 
-              // 敵ユニットなら情報隠蔽（視界内でも相手の詳細が見えないようにしたい場合はここを調整）
-              if (unit.owner !== currentTurn) {
-                unitEl.innerHTML = `<div>${name}</div><div>HP:${unit.hp}</div>`;
-              } else {
-                unitEl.innerHTML = `<div>${name}</div><div>${unit.hp}/${unit.atk}</div>`;
-              }
-              cell.appendChild(unitEl);
-            }
+            let name = unit.name;
+            if (unit.type === "land" && r >= 3 && r <= 10) name = "輸送船";
+
+            // HP割合計算
+            const hpPercent = Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100));
+
+            unitEl.innerHTML = `
+              <div style="font-weight:bold;">${name}</div>
+              <div class="hp-bar-bg">
+                <div class="hp-bar-fill" style="width: ${hpPercent}%;"></div>
+              </div>
+              <div style="font-size:7px; margin-top:1px;">${unit.hp}/${unit.atk}</div>
+            `;
+            cell.appendChild(unitEl);
           }
 
           cell.onclick = () => handleCellClick(r, c);
@@ -283,35 +303,31 @@
         if (dist > 0 && dist <= maxDist) {
           const targetUnit = board[r][c];
 
-          // 味方ユニットがいるマスには進めない
           if (targetUnit && targetUnit.owner === currentTurn) {
             selectedBoardPos = null;
             render();
             return;
           }
 
-          // --- 戦闘処理 ---
+          // 戦闘処理
           if (targetUnit && targetUnit.owner !== currentTurn) {
-            // 攻撃実行
-            targetUnit.hp -= myUnit.atk; // 相手にダメージ
-            myUnit.hp -= Math.floor(targetUnit.atk / 2); // 相手からの反撃（半分のダメージ）
+            targetUnit.hp -= myUnit.atk;
+            myUnit.hp -= Math.floor(targetUnit.atk / 2); // 反撃
 
             alert(`【戦闘発生！】\n敵に ${myUnit.atk} ダメージを与えました！\n(反撃で ${Math.floor(targetUnit.atk / 2)} ダメージを受けました)`);
 
-            // 敵撃破判定
             if (targetUnit.hp <= 0) {
               alert("敵ユニットを撃破しました！");
-              board[r][c] = myUnit; // 撃破して進軍
+              board[r][c] = myUnit;
               board[sr][sc] = null;
             }
 
-            // 自分撃破判定
             if (myUnit.hp <= 0) {
               alert("自軍ユニットが撃破されました...");
               board[sr][sc] = null;
             }
           } 
-          // --- 通常移動 ---
+          // 通常移動
           else {
             board[r][c] = myUnit;
             board[sr][sc] = null;
