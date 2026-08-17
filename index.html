@@ -49,7 +49,9 @@
     /* マス目属性 */
     .cell.land-axis { background-color: #a8e6cf; }   /* 軸心国土地: 緑 */
     .cell.land-allies { background-color: #ff8b8b; } /* 連合国土地: 赤 */
-    .cell.island { background-color: #d4a373; }      /* 小島: 茶緑 */
+    .cell.island-axis { background-color: #98fb98; } /* 軸心国占領島 */
+    .cell.island-allies { background-color: #ffb6c1; }/* 連合国占領島 */
+    .cell.island { background-color: #d4a373; }      /* 未占領島: 茶 */
     .cell.sea { background-color: #aed9e0; }         /* 海: 青 */
 
     .cell.selected { border: 3px solid #ffc107; z-index: 10; }
@@ -73,7 +75,7 @@
     .unit.allies { background-color: #0d6efd; } /* 連合国: 青 */
     .unit.hq { border: 2px solid #ffd700; }
 
-    /* スタック（組み合わせ）バッジ */
+    /* スタックバッジ */
     .stack-badge {
       position: absolute;
       top: 1px;
@@ -143,7 +145,7 @@
   <h1>大東亜戦術ボードゲーム (15x15)</h1>
   <div id="game-info">
     <p>現在のターン: <span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
-    <p style="color: #666; font-size: 0.8em;">※自軍ユニットを移動させて最大4体まで合体（能力合算）できます！</p>
+    <p style="color: #666; font-size: 0.8em;">※爆撃機特攻：戦術爆撃機➔歩兵(+5) / 戦闘爆撃機➔戦車(+5)</p>
   </div>
 
   <div id="game-container">
@@ -170,6 +172,7 @@
 
     const ISLANDS = [{r: 5, c: 3}, {r: 7, c: 7}, {r: 9, c: 11}];
 
+    // 土地・島の所有者管理
     let landOwners = Array(15).fill(null).map((_, r) => {
       if (r <= 2) return Array(15).fill("allies");
       if (r >= 12) return Array(15).fill("axis");
@@ -213,8 +216,11 @@
       return ISLANDS.some(is => is.r === r && is.c === c);
     }
 
-    function isAdjacentToIsland(r, c) {
-      return ISLANDS.some(is => Math.max(Math.abs(is.r - r), Math.abs(is.c - c)) <= 1);
+    // 自軍が占領済みの「小島」に隣接しているか判定
+    function isAdjacentToOwnedIsland(r, c, owner) {
+      return ISLANDS.some(is => {
+        return (landOwners[is.r][is.c] === owner) && (Math.max(Math.abs(is.r - r), Math.abs(is.c - c)) <= 1);
+      });
     }
 
     function getUnitStats(cellUnit, r, c) {
@@ -264,6 +270,27 @@
       };
     }
 
+    // ★ 爆撃機の特攻ボーナス攻撃力計算
+    function calculateAttack(attacker, defender) {
+      let baseAtk = attacker.atk;
+      let bonus = 0;
+
+      const atkUnits = attacker.units || [attacker];
+      const defUnits = defender ? (defender.units || [defender]) : [];
+
+      atkUnits.forEach(aUnit => {
+        if (aUnit.name === "戦術爆撃機") {
+          // 相手の中に歩兵がいる場合 +5
+          if (defUnits.some(d => d.name === "歩兵")) bonus += 5;
+        } else if (aUnit.name === "戦闘爆撃機") {
+          // 相手の中に戦車系（軽/中/重）がいる場合 +5
+          if (defUnits.some(d => d.name.includes("戦車"))) bonus += 5;
+        }
+      });
+
+      return baseAtk + bonus;
+    }
+
     function render() {
       const turnEl = document.getElementById("current-turn");
       turnEl.innerText = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
@@ -285,8 +312,12 @@
           const cell = document.createElement("div");
           cell.classList.add("cell");
 
-          if (isIsland(r, c)) cell.classList.add("island");
-          else if (landOwners[r][c] === "axis") cell.classList.add("land-axis");
+          if (isIsland(r, c)) {
+            const owner = landOwners[r][c];
+            if (owner === "axis") cell.classList.add("island-axis");
+            else if (owner === "allies") cell.classList.add("island-allies");
+            else cell.classList.add("island");
+          } else if (landOwners[r][c] === "axis") cell.classList.add("land-axis");
           else if (landOwners[r][c] === "allies") cell.classList.add("land-allies");
           else cell.classList.add("sea");
 
@@ -296,7 +327,6 @@
 
           let rawUnit = board[r][c];
 
-          // 撃破されたユニットデータの掃除
           if (rawUnit && isDead(rawUnit)) {
             board[r][c] = null;
             rawUnit = null;
@@ -364,26 +394,27 @@
       if (gameOver) return;
 
       const isCoast = (currentTurn === "axis" && r === 11) || (currentTurn === "allies" && r === 3);
-      const isNearIsland = isAdjacentToIsland(r, c) && (r >= 3 && r <= 11);
+      const isNearOwnedIsland = isAdjacentToOwnedIsland(r, c, currentTurn) && (r >= 3 && r <= 11);
       const isOwnLand = (currentTurn === "axis" && r >= 12) || (currentTurn === "allies" && r <= 2);
 
-      // 【1. 配置】
+      // 【1. 手札からの配置】
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
-        
+
+        // ★ルール：戦艦は絶対に合体・乗込不可
+        if (card.type === "sea" && board[r][c] !== null) {
+          alert("戦艦は他のユニットに乗込（合体）させることはできません");
+          return;
+        }
+
         if (board[r][c] !== null) {
           const target = board[r][c];
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
           if (target.type === "hq") { alert("司令部には合体できません"); return; }
-          
+          if (target.type === "sea") { alert("戦艦に他のユニットを合体させることはできません"); return; }
+
           const targetUnits = target.units || [target];
           if (targetUnits.length >= 4) { alert("これ以上ユニットを組み合わせられません（最大4体）"); return; }
-          
-          if ((card.type === "sea" && targetUnits[0].type !== "sea") || 
-              (card.type !== "sea" && targetUnits[0].type === "sea")) {
-            alert("戦艦と陸上ユニット（輸送船）は組み合わせられません");
-            return;
-          }
 
           targetUnits.push({ ...card });
           target.units = targetUnits;
@@ -393,8 +424,12 @@
           return;
         }
 
+        // 配置条件
         if (card.type === "land" && !isOwnLand) { alert("陸上ユニットは自軍の陸地にしか配置できません"); return; }
-        if (card.type === "sea" && (!isCoast && !isNearIsland)) { alert("戦艦は自軍沿岸または小島に接する海にしか配置できません"); return; }
+        if (card.type === "sea" && (!isCoast && !isNearOwnedIsland)) { 
+          alert("戦艦は自軍沿岸、または【占領済みの小島】に接する海にしか配置できません"); 
+          return; 
+        }
         if (card.type === "air" && !isOwnLand) { alert("航空ユニットは自軍の陸地にしか配置できません"); return; }
 
         board[r][c] = { ...card, owner: currentTurn, units: [{ ...card }] };
@@ -408,7 +443,7 @@
       if (selectedBoardPos) {
         const { r: sr, c: sc } = selectedBoardPos;
         const myRawUnit = board[sr][sc];
-        
+
         if (!myRawUnit || myRawUnit.type === "hq") {
           if (myRawUnit && myRawUnit.type === "hq") alert("司令部は移動できません");
           selectedBoardPos = null;
@@ -423,10 +458,25 @@
         if (myStats.type === "sea" || myStats.type === "air") maxDist = 2;
 
         if (dist > 0 && dist <= maxDist) {
+          // ★ルール：戦艦は「敵の陸地（沿岸より奥）」には侵入不可（海岸/海まで）
+          const isEnemyLand = (currentTurn === "axis" && r <= 2) || (currentTurn === "allies" && r >= 12);
+          if (myStats.type === "sea" && isEnemyLand) {
+            alert("戦艦は相手の海岸までしか進めません（敵の陸地へは進入不可）");
+            selectedBoardPos = null;
+            render();
+            return;
+          }
+
           const targetRawUnit = board[r][c];
 
           // 味方との合体
           if (targetRawUnit && targetRawUnit.owner === currentTurn) {
+            if (myStats.type === "sea" || targetRawUnit.type === "sea") {
+              alert("戦艦は乗り込み（合体）できません");
+              selectedBoardPos = null;
+              render();
+              return;
+            }
             if (targetRawUnit.type === "hq") {
               alert("司令部には合体できません");
               selectedBoardPos = null;
@@ -438,11 +488,6 @@
             const targetUnits = targetRawUnit.units || [targetRawUnit];
 
             if (myUnits.length + targetUnits.length > 4) { alert("合体後のユニット数が4体を超えてしまうため組み合わせられません"); return; }
-            if ((myStats.type === "sea" && targetRawUnit.type !== "sea") || 
-                (myStats.type !== "sea" && targetRawUnit.type === "sea")) {
-              alert("戦艦と陸上ユニット（輸送船）は組み合わせられません");
-              return;
-            }
 
             targetRawUnit.units = [...targetUnits, ...myUnits];
             board[sr][sc] = null;
@@ -455,10 +500,12 @@
           if (targetRawUnit && targetRawUnit.owner !== currentTurn) {
             const targetStats = getUnitStats(targetRawUnit, r, c);
 
-            const dealAtk = myStats.atk;
-            const counterAtk = Math.floor(targetStats.atk / 2);
+            // ★特攻ボーナスを加味したダメージ計算
+            const dealAtk = calculateAttack(myStats, targetStats);
+            const counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
 
-            alert(`【交戦！】\n敵に ${dealAtk} ダメージを与えました！\n(反撃で ${counterAtk} ダメージを受けました)`);
+            let bonusMsg = dealAtk > myStats.atk ? ` (特攻ボーナス+${dealAtk - myStats.atk}!)` : "";
+            alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！\n(反撃で ${counterAtk} ダメージを受けました)`);
 
             applyDamage(targetRawUnit, dealAtk);
             applyDamage(myRawUnit, counterAtk);
@@ -466,13 +513,11 @@
             const targetDead = isDead(targetRawUnit);
             const myDead = isDead(myRawUnit);
 
-            // 相打ち（両方死亡）
             if (targetDead && myDead) {
               alert("相打ちとなり、両軍ともに全滅しました！");
               board[r][c] = null;
               board[sr][sc] = null;
             } 
-            // 敵のみ撃破（占領）
             else if (targetDead) {
               alert(`敵部隊を撃破・占領しました！`);
               if (targetRawUnit.type === "hq") {
@@ -483,9 +528,11 @@
               board[r][c] = myRawUnit;
               board[sr][sc] = null;
 
-              if (r <= 2 || r >= 12) landOwners[r][c] = currentTurn;
+              // 土地・小島の占領記録
+              if (r <= 2 || r >= 12 || isIsland(r, c)) {
+                landOwners[r][c] = currentTurn;
+              }
             } 
-            // 自分のみ返り討ち
             else if (myDead) {
               alert("自軍部隊が返り討ちに遭い壊滅しました...");
               board[sr][sc] = null;
@@ -496,7 +543,10 @@
             board[r][c] = myRawUnit;
             board[sr][sc] = null;
 
-            if (r <= 2 || r >= 12) landOwners[r][c] = currentTurn;
+            // 土地・小島の占領記録
+            if (r <= 2 || r >= 12 || isIsland(r, c)) {
+              landOwners[r][c] = currentTurn;
+            }
           }
 
           selectedBoardPos = null;
