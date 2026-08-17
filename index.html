@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 2.2</title>
+  <title>大東亜戦術ボードゲーム Ver 2.3</title>
   <style>
     body {
       font-family: sans-serif;
@@ -218,7 +218,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.2)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.3)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -226,12 +226,13 @@
       <div id="game-info">
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
-          ・<b>海上攻撃バグ修正済</b><br>
+          ・<b>スポーン条件厳格化</b><br>
+           - 陸/空: 占領している陸地のみ<br>
+           - 海: 占領している陸地の沿岸のみ<br>
           ・黄枠: 移動/合体<br>
           ・赤枠: 攻撃ターゲット<br>
           ・島は飛行機のみ通過可<br>
-          ・最大<b>6体合体</b>まで可能<br>
-          ・ターン移行時1秒ウェイト
+          ・最大6体合体まで可能
         </p>
       </div>
     </div>
@@ -349,10 +350,26 @@
       return ISLANDS.some(is => is.r === r && is.c === c);
     }
 
-    function isAdjacentToOwnedIsland(r, c, owner) {
-      return ISLANDS.some(is => {
-        return (landOwners[is.r][is.c] === owner) && (Math.max(Math.abs(is.r - r), Math.abs(is.c - c)) <= 1);
-      });
+    // 指定マス(r,c)が、自軍(owner)の占領している「陸地マス」かどうか判定
+    function isOwnedLandTile(r, c, owner) {
+      return landOwners[r][c] === owner;
+    }
+
+    // 指定の海マス(r,c)が、自軍(owner)が占領している「陸地マス」に1マスでも接しているか判定
+    function isCoastOfOwnedLand(r, c, owner) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+            if (landOwners[nr][nc] === owner) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
     }
 
     function getCategory(unit) {
@@ -453,7 +470,6 @@
       return Math.max(0, baseAtk + bonus);
     }
 
-    // 移動パス判定（小島すり抜けのみ防止）
     function isPathBlocked(sr, sc, tr, tc, isAir) {
       if (isAir) return false;
 
@@ -464,7 +480,6 @@
         const midR = sr + dr / 2;
         const midC = sc + dc / 2;
         
-        // 移動経路の中間点が「小島」の場合は通過不可
         if (isIsland(midR, midC)) {
           return true;
         }
@@ -472,7 +487,6 @@
       return false;
     }
 
-    // 移動先の有効性判定
     function isValidMoveTarget(sr, sc, tr, tc) {
       const myRawUnit = board[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
@@ -483,16 +497,13 @@
 
       if (dist === 0 || dist > maxDist) return false;
 
-      // パス遮断チェック（島飛び越え防止）
       if (isPathBlocked(sr, sc, tr, tc, myStats.type === "air")) return false;
 
       const targetRawUnit = board[tr][tc];
 
-      // 海上ユニット（戦艦・潜水艦等）は陸地や島へ移動不可
       const isLandOrIsland = (currentTurn === "axis" && tr <= 2) || (currentTurn === "allies" && tr >= 10) || isIsland(tr, tc);
       if (myStats.type === "sea" && isLandOrIsland && !targetRawUnit) return false;
 
-      // 味方合体判定
       if (targetRawUnit && targetRawUnit.owner === currentTurn) {
         if (targetRawUnit.type === "hq") return false;
         if (getCategory(myRawUnit) !== getCategory(targetRawUnit)) return false;
@@ -504,13 +515,11 @@
         return true;
       }
 
-      // 敵がいる場所へは「移動」では入らない
       if (targetRawUnit && targetRawUnit.owner !== currentTurn) return false;
 
       return true;
     }
 
-    // 攻撃ターゲットの有効性判定（修正済み）
     function isValidAttackTarget(sr, sc, tr, tc) {
       const myRawUnit = board[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
@@ -524,10 +533,8 @@
       const targetRawUnit = board[tr][tc];
       if (!targetRawUnit || targetRawUnit.owner === currentTurn) return false;
 
-      // 視界外の敵は攻撃不可
       if (!isVisible(tr, tc, currentTurn)) return false;
 
-      // 潜水艦は戦艦にしか攻撃できない
       if (myStats.isSub) {
         const targetStats = getUnitStats(targetRawUnit, tr, tc);
         if (!targetStats || targetStats.name.indexOf("戦艦") === -1) return false;
@@ -594,13 +601,12 @@
           else if (landOwners[r][c] === "allies") cell.classList.add("land-allies");
           else cell.classList.add("sea");
 
-          // ハイライト表示
           if (selectedBoardPos && selectedBoardPos.r === r && selectedBoardPos.c === c) {
             cell.classList.add("selected");
           } else if (selectedBoardPos && actionMode === "move" && isValidMoveTarget(selectedBoardPos.r, selectedBoardPos.c, r, c)) {
-            cell.classList.add("movable"); // 移動：黄枠
+            cell.classList.add("movable");
           } else if (selectedBoardPos && actionMode === "attack" && isValidAttackTarget(selectedBoardPos.r, selectedBoardPos.c, r, c)) {
-            cell.classList.add("attackable"); // 攻撃：赤枠
+            cell.classList.add("attackable");
           }
 
           let rawUnit = board[r][c];
@@ -678,15 +684,28 @@
     function handleCellClick(r, c) {
       if (gameOver || isProcessingTurn) return;
 
-      const isCoast = (currentTurn === "axis" && r === 9) || (currentTurn === "allies" && r === 3);
-      const isNearOwnedIsland = isAdjacentToOwnedIsland(r, c, currentTurn) && (r >= 3 && r <= 9);
-      const isOwnLand = (currentTurn === "axis" && r >= 10) || (currentTurn === "allies" && r <= 2);
-      const isOwnedIsland = isIsland(r, c) && landOwners[r][c] === currentTurn;
-
-      // 【1. 手札からの配置】
+      // 【1. 手札からの配置 (厳格化されたスポーンルール)】
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
 
+        // 土地（自軍の占領下にあるか）および 沿岸（自軍の占領地に接しているか）の確認
+        const isMyLand = isOwnedLandTile(r, c, currentTurn);
+        const isMyCoast = isCoastOfOwnedLand(r, c, currentTurn);
+
+        // --- 配置条件のチェック ---
+        if (card.type === "land" || card.type === "air") {
+          if (!isMyLand) {
+            alert("【配置不可】陸上・航空ユニットは自軍が占領している陸地にしか出撃できません。");
+            return;
+          }
+        } else if (card.type === "sea") {
+          if (!isMyCoast) {
+            alert("【配置不可】艦艇ユニットは自軍が占領している陸地に接した沿岸（海）にしか出撃できません。");
+            return;
+          }
+        }
+
+        // 既存ユニットが存在する場合の合体・スポーンチェック
         if (board[r][c] !== null) {
           const target = board[r][c];
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
@@ -709,10 +728,7 @@
           return;
         }
 
-        if (card.type === "land" && (!isOwnLand && !isOwnedIsland)) { alert("陸上ユニットは自軍の陸地、または【占領済みの小島】にしか配置できません"); return; }
-        if (card.type === "sea" && (!isCoast && !isNearOwnedIsland)) { alert("艦艇は自軍沿岸、または【占領済みの小島】に接する海にしか配置できません"); return; }
-        if (card.type === "air" && (!isOwnLand && !isOwnedIsland)) { alert("航空ユニットは自軍の陸地、または【占領済みの小島】にしか配置できません"); return; }
-
+        // 空きマスへの新規配置
         board[r][c] = { ...card, owner: currentTurn, units: [{ ...card }] };
         hands[currentTurn].splice(selectedHandIndex, 1);
         selectedHandIndex = null;
@@ -727,14 +743,12 @@
           const myRawUnit = board[sr][sc];
           const targetRawUnit = board[r][c];
 
-          // 味方との合体
           if (targetRawUnit && targetRawUnit.owner === currentTurn) {
             const myUnits = myRawUnit.units || [myRawUnit];
             const targetUnits = targetRawUnit.units || [targetRawUnit];
             targetRawUnit.units = [...targetUnits, ...myUnits];
             board[sr][sc] = null;
           } else {
-            // 通常移動
             board[r][c] = myRawUnit;
             board[sr][sc] = null;
             if (r <= 2 || r >= 10 || isIsland(r, c)) {
@@ -795,13 +809,11 @@
               alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
               gameOver = true;
             }
-            // 陸上・航空ユニットのみ敵地に進撃して占領
             if (myStats.type !== "sea") {
               board[r][c] = myRawUnit;
               board[sr][sc] = null;
               if (r <= 2 || r >= 10 || isIsland(r, c)) landOwners[r][c] = currentTurn;
             } else {
-              // 艦艇は攻撃で撃破してもその場に留まる（陸地には侵入しない）
               board[r][c] = null;
             }
           } else if (myDead) {
