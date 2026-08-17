@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>大東亜戦術ボードゲーム</title>
   <style>
-    /* 全体デザイン（明るい配色） */
+    /* 全体デザイン */
     body {
       font-family: sans-serif;
       background-color: #f0f2f5;
@@ -47,9 +47,10 @@
       position: relative;
     }
 
-    /* マス目の属性色：いつでも常に見える（陸＝黄緑、海＝青） */
-    .cell.land { background-color: #a8e6cf; } /* 明るい黄緑 */
-    .cell.sea { background-color: #aed9e0; }  /* 明るい青 */
+    /* マス目属性色 */
+    .cell.land-axis { background-color: #a8e6cf; }   /* 軸心国土地: 緑 */
+    .cell.land-allies { background-color: #ff8b8b; } /* 連合国土地: 赤 */
+    .cell.sea { background-color: #aed9e0; }         /* 海: 青 */
 
     .cell.selected { border: 3px solid #ffc107; z-index: 10; }
 
@@ -68,10 +69,11 @@
       justify-content: center;
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
-    .unit.axis { background-color: #dc3545; }   /* 軸心国: 赤 */
-    .unit.allies { background-color: #0d6efd; } /* 連合国: 青 */
+    .unit.axis { background-color: #dc3545; }   /* 軸心国ユニット: 赤 */
+    .unit.allies { background-color: #0d6efd; } /* 連合国ユニット: 青 */
+    .unit.hq { border: 2px solid #ffd700; font-weight: bold; } /* 司令部枠線 */
 
-    /* HPバーのスタイル */
+    /* HPバー */
     .hp-bar-bg {
       width: 85%;
       height: 4px;
@@ -82,7 +84,7 @@
     }
     .hp-bar-fill {
       height: 100%;
-      background-color: #28a745; /* 緑色ゲージ */
+      background-color: #28a745;
       transition: width 0.2s;
     }
 
@@ -129,19 +131,19 @@
   <h1>大東亜戦術ボードゲーム (14x14)</h1>
   <div id="game-info">
     <p>現在のターン: <span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
-    <p style="color: #666; font-size: 0.85em;">※敵ユニットは自軍ユニットの周囲2マス以内に近づくと姿を現します</p>
+    <p style="color: #666; font-size: 0.85em;">※相手の司令部(最奥中央)を撃破した方が勝利！手札上限は5枚です。</p>
   </div>
 
   <div id="game-container">
     <div id="board"></div>
     <div id="controls">
-      <h3>手札 (<span id="hand-owner">軸心国</span>)</h3>
+      <h3>手札 (<span id="hand-owner">軸心国</span>) <span id="hand-count" style="font-size:12px;"></span></h3>
       <div id="hand"></div>
     </div>
   </div>
 
   <script>
-    // ユニットデータ設定
+    // カード定義
     const CARD_TYPES = [
       { name: "歩兵",       type: "land", hp: 20, maxHp: 20, atk: 10 },
       { name: "軽戦車",     type: "land", hp: 30, maxHp: 30, atk: 15 },
@@ -154,11 +156,25 @@
 
     let currentTurn = "axis";
     let board = Array(14).fill(null).map(() => Array(14).fill(null));
+    
+    // 土地の所有権（"allies", "axis", または null[海]）
+    let landOwners = Array(14).fill(null).map((_, r) => {
+      if (r <= 2) return Array(14).fill("allies");
+      if (r >= 11) return Array(14).fill("axis");
+      return Array(14).fill(null);
+    });
+
     let hands = { axis: [], allies: [] };
     let selectedHandIndex = null;
     let selectedBoardPos = null;
+    let gameOver = false;
 
     function initGame() {
+      // 司令部の初期配置 (各陣地の中央最奥 c=6)
+      board[0][6] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "allies" };
+      board[13][6] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "axis" };
+
+      // 初期手札3枚
       for (let i = 0; i < 3; i++) {
         hands.axis.push(getRandomCard());
         hands.allies.push(getRandomCard());
@@ -171,7 +187,7 @@
       return { ...CARD_TYPES[rand] };
     }
 
-    // 周囲2マス以内（視界内）かの判定
+    // 周囲2マス以内の視界判定
     function isVisible(r, c, owner) {
       for (let br = 0; br < 14; br++) {
         for (let bc = 0; bc < 14; bc++) {
@@ -192,6 +208,8 @@
       turnEl.className = `status-text ${currentTurn}-text`;
 
       document.getElementById("hand-owner").innerText = currentTurn === "axis" ? "軸心国" : "連合国";
+      document.getElementById("hand-count").innerText = `(${hands[currentTurn].length}/5枚)`;
+      
       renderBoard();
       renderHand();
     }
@@ -205,8 +223,9 @@
           const cell = document.createElement("div");
           cell.classList.add("cell");
 
-          // マス目属性（陸＝黄緑、海＝青）※マップ自体はいつでも綺麗に見える
-          if (r <= 2 || r >= 11) cell.classList.add("land");
+          // 土地の色付け (緑=軸心, 赤=連合, 青=海)
+          if (landOwners[r][c] === "axis") cell.classList.add("land-axis");
+          else if (landOwners[r][c] === "allies") cell.classList.add("land-allies");
           else cell.classList.add("sea");
 
           if (selectedBoardPos && selectedBoardPos.r === r && selectedBoardPos.c === c) {
@@ -215,18 +234,18 @@
 
           const unit = board[r][c];
           
-          // 【表示条件】自分のユニット、または「自軍から2マス以内にいる敵ユニット」のみ描画
+          // 自分のユニット、または自軍の2マス以内にいる敵を表示
           if (unit) {
             const visible = isVisible(r, c, currentTurn);
             
             if (unit.owner === currentTurn || visible) {
               const unitEl = document.createElement("div");
               unitEl.classList.add("unit", unit.owner);
+              if (unit.type === "hq") unitEl.classList.add("hq");
 
               let name = unit.name;
               if (unit.type === "land" && r >= 3 && r <= 10) name = "輸送船";
 
-              // HP割合計算
               const hpPercent = Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100));
 
               unitEl.innerHTML = `
@@ -256,6 +275,7 @@
         if (selectedHandIndex === index) cardEl.classList.add("selected");
         cardEl.innerHTML = `<strong>[${card.name}]</strong><br>HP: ${card.hp} / ATK: ${card.atk}`;
         cardEl.onclick = () => {
+          if (gameOver) return;
           selectedHandIndex = index;
           selectedBoardPos = null;
           render();
@@ -265,6 +285,8 @@
     }
 
     function handleCellClick(r, c) {
+      if (gameOver) return;
+
       const isCoast = (currentTurn === "axis" && r === 10) || (currentTurn === "allies" && r === 3);
       const isOwnLand = (currentTurn === "axis" && r >= 11) || (currentTurn === "allies" && r <= 2);
 
@@ -305,18 +327,35 @@
           // 戦闘処理
           if (targetUnit && targetUnit.owner !== currentTurn) {
             targetUnit.hp -= myUnit.atk;
-            myUnit.hp -= Math.floor(targetUnit.atk / 2); // 反撃
-
-            alert(`【戦闘発生！】\n敵に ${myUnit.atk} ダメージを与えました！\n(反撃で ${Math.floor(targetUnit.atk / 2)} ダメージを受けました)`);
-
-            if (targetUnit.hp <= 0) {
-              alert("敵ユニットを撃破しました！");
-              board[r][c] = myUnit;
-              board[sr][sc] = null;
+            if (targetUnit.atk > 0) {
+              myUnit.hp -= Math.floor(targetUnit.atk / 2); // 司令部以外からの反撃
             }
 
+            alert(`【交戦！】\n敵に ${myUnit.atk} ダメージを与えました！`);
+
+            // 敵撃破判定
+            if (targetUnit.hp <= 0) {
+              alert(`敵の ${targetUnit.name} を破壊・占領しました！`);
+              
+              // 司令部破壊時の勝敗判定
+              if (targetUnit.type === "hq") {
+                const winner = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
+                alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を落としました！${winner}の勝利です！`);
+                gameOver = true;
+              }
+
+              board[r][c] = myUnit;
+              board[sr][sc] = null;
+
+              // 陸地の占領（相手の陸地に踏み込んだら自分の色にする）
+              if (r <= 2 || r >= 11) {
+                landOwners[r][c] = currentTurn;
+              }
+            }
+
+            // 自軍撃破判定
             if (myUnit.hp <= 0) {
-              alert("自軍ユニットが撃破されました...");
+              alert("自軍ユニットが返り討ちに遭い撃破されました...");
               board[sr][sc] = null;
             }
           } 
@@ -324,10 +363,16 @@
           else {
             board[r][c] = myUnit;
             board[sr][sc] = null;
+
+            // 陸地の占領処理
+            if (r <= 2 || r >= 11) {
+              landOwners[r][c] = currentTurn;
+            }
           }
 
           selectedBoardPos = null;
-          finishTurn();
+          if (!gameOver) finishTurn();
+          else render();
         } else {
           selectedBoardPos = null;
           render();
@@ -344,7 +389,11 @@
     }
 
     function finishTurn() {
-      hands[currentTurn].push(getRandomCard());
+      // ドロー（手札の上限は5枚）
+      if (hands[currentTurn].length < 5) {
+        hands[currentTurn].push(getRandomCard());
+      }
+      
       currentTurn = currentTurn === "axis" ? "allies" : "axis";
       selectedHandIndex = null;
       selectedBoardPos = null;
