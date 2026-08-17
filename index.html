@@ -145,7 +145,7 @@
   <h1>大東亜戦術ボードゲーム (15x15)</h1>
   <div id="game-info">
     <p>現在のターン: <span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
-    <p style="color: #666; font-size: 0.8em;">※爆撃機特攻：戦術爆撃機➔歩兵(+5) / 戦闘爆撃機➔戦車(+5)</p>
+    <p style="color: #666; font-size: 0.8em;">※反撃確率70% / 残HPに比例してATK低下 / 戦艦は陸地・島への乗り込み不可</p>
   </div>
 
   <div id="game-container">
@@ -216,45 +216,58 @@
       return ISLANDS.some(is => is.r === r && is.c === c);
     }
 
-    // 自軍が占領済みの「小島」に隣接しているか判定
     function isAdjacentToOwnedIsland(r, c, owner) {
       return ISLANDS.some(is => {
         return (landOwners[is.r][is.c] === owner) && (Math.max(Math.abs(is.r - r), Math.abs(is.c - c)) <= 1);
       });
     }
 
+    // ユニットのステータス計算
     function getUnitStats(cellUnit, r, c) {
       if (!cellUnit) return null;
-      if (cellUnit.type === "hq") return cellUnit;
+      if (cellUnit.type === "hq") {
+        return {
+          ...cellUnit,
+          currentAtk: 0
+        };
+      }
 
       const units = cellUnit.units || [cellUnit];
       if (!units || units.length === 0) return null;
 
       let mainType = units[0].type;
+      let totalHp = 0;
+      let totalMaxHp = 0;
+      let totalBaseAtk = 0;
+
+      units.forEach(u => {
+        totalHp += u.hp;
+        totalMaxHp += u.maxHp;
+        totalBaseAtk += u.atk;
+      });
+
+      // 残HPの割合に応じてATKを計算（残HP% に比例）
+      let hpRatio = totalMaxHp > 0 ? (totalHp / totalMaxHp) : 0;
+      let currentAtk = Math.max(1, Math.round(totalBaseAtk * hpRatio));
+
+      let name = units[0].name;
       
+      // ★輸送船の場合（海の上にいる陸上ユニット）
       if (mainType === "land" && (r >= 3 && r <= 11) && !isIsland(r, c)) {
+        name = units.length > 1 ? `輸送船等(${units.length})` : "輸送船";
+        // 輸送船としてのステータス反映（実際の合算HPとMaxHPを使用）
         return {
-          name: "輸送船",
+          name: name,
           type: "land",
-          hp: 25,
-          maxHp: 25,
-          atk: 5,
+          hp: totalHp,
+          maxHp: totalMaxHp,
+          atk: totalBaseAtk,
+          currentAtk: currentAtk,
           owner: cellUnit.owner,
           units: units
         };
       }
 
-      let totalHp = 0;
-      let totalMaxHp = 0;
-      let totalAtk = 0;
-
-      units.forEach(u => {
-        totalHp += u.hp;
-        totalMaxHp += u.maxHp;
-        totalAtk += u.atk;
-      });
-
-      let name = units[0].name;
       if (units.length > 1) {
         name = `${units[0].name}等(${units.length})`;
       }
@@ -264,15 +277,16 @@
         type: mainType,
         hp: totalHp,
         maxHp: totalMaxHp,
-        atk: totalAtk,
+        atk: totalBaseAtk,
+        currentAtk: currentAtk,
         owner: cellUnit.owner,
         units: units
       };
     }
 
-    // ★ 爆撃機の特攻ボーナス攻撃力計算
+    // 爆撃機の特攻ボーナス攻撃力計算
     function calculateAttack(attacker, defender) {
-      let baseAtk = attacker.atk;
+      let baseAtk = attacker.currentAtk;
       let bonus = 0;
 
       const atkUnits = attacker.units || [attacker];
@@ -280,15 +294,13 @@
 
       atkUnits.forEach(aUnit => {
         if (aUnit.name === "戦術爆撃機") {
-          // 相手の中に歩兵がいる場合 +5
           if (defUnits.some(d => d.name === "歩兵")) bonus += 5;
         } else if (aUnit.name === "戦闘爆撃機") {
-          // 相手の中に戦車系（軽/中/重）がいる場合 +5
           if (defUnits.some(d => d.name.includes("戦車"))) bonus += 5;
         }
       });
 
-      return baseAtk + bonus;
+      return Math.max(0, baseAtk + bonus);
     }
 
     function render() {
@@ -349,7 +361,7 @@
                   <div class="hp-bar-bg">
                     <div class="hp-bar-fill" style="width: ${hpPercent}%;"></div>
                   </div>
-                  <div style="font-size:7px; margin-top:1px;">${displayUnit.hp}/${displayUnit.atk}</div>
+                  <div style="font-size:7px; margin-top:1px;">${displayUnit.hp}/${displayUnit.currentAtk}</div>
                 `;
 
                 const unitCount = rawUnit.units ? rawUnit.units.length : 1;
@@ -397,11 +409,10 @@
       const isNearOwnedIsland = isAdjacentToOwnedIsland(r, c, currentTurn) && (r >= 3 && r <= 11);
       const isOwnLand = (currentTurn === "axis" && r >= 12) || (currentTurn === "allies" && r <= 2);
 
-      // 【1. 手札からの配置】
+      // 【1. 配置】
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
 
-        // ★ルール：戦艦は絶対に合体・乗込不可
         if (card.type === "sea" && board[r][c] !== null) {
           alert("戦艦は他のユニットに乗込（合体）させることはできません");
           return;
@@ -458,10 +469,10 @@
         if (myStats.type === "sea" || myStats.type === "air") maxDist = 2;
 
         if (dist > 0 && dist <= maxDist) {
-          // ★ルール：戦艦は「敵の陸地（沿岸より奥）」には侵入不可（海岸/海まで）
+          // ★ルール：戦艦は「敵の陸地」および「3つの島マス全般」へ乗り込み（進入）不可
           const isEnemyLand = (currentTurn === "axis" && r <= 2) || (currentTurn === "allies" && r >= 12);
-          if (myStats.type === "sea" && isEnemyLand) {
-            alert("戦艦は相手の海岸までしか進めません（敵の陸地へは進入不可）");
+          if (myStats.type === "sea" && (isEnemyLand || isIsland(r, c))) {
+            alert("戦艦は陸地や島へ乗り込むことはできません（海から攻撃してください）");
             selectedBoardPos = null;
             render();
             return;
@@ -500,15 +511,21 @@
           if (targetRawUnit && targetRawUnit.owner !== currentTurn) {
             const targetStats = getUnitStats(targetRawUnit, r, c);
 
-            // ★特攻ボーナスを加味したダメージ計算
             const dealAtk = calculateAttack(myStats, targetStats);
-            const counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
 
-            let bonusMsg = dealAtk > myStats.atk ? ` (特攻ボーナス+${dealAtk - myStats.atk}!)` : "";
-            alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！\n(反撃で ${counterAtk} ダメージを受けました)`);
+            // ★ルール：反撃確率は 70%
+            const isCountered = Math.random() < 0.70;
+            const counterAtk = isCountered ? Math.floor(calculateAttack(targetStats, myStats) / 2) : 0;
+
+            let bonusMsg = dealAtk > myStats.currentAtk ? ` (特攻ボーナス!)` : "";
+            let counterMsg = isCountered ? `\n(敵が反撃！ ${counterAtk} ダメージを受けました)` : `\n(敵の反撃は発生しませんでした！)`;
+
+            alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！${counterMsg}`);
 
             applyDamage(targetRawUnit, dealAtk);
-            applyDamage(myRawUnit, counterAtk);
+            if (isCountered) {
+              applyDamage(myRawUnit, counterAtk);
+            }
 
             const targetDead = isDead(targetRawUnit);
             const myDead = isDead(myRawUnit);
@@ -528,7 +545,6 @@
               board[r][c] = myRawUnit;
               board[sr][sc] = null;
 
-              // 土地・小島の占領記録
               if (r <= 2 || r >= 12 || isIsland(r, c)) {
                 landOwners[r][c] = currentTurn;
               }
@@ -543,7 +559,6 @@
             board[r][c] = myRawUnit;
             board[sr][sc] = null;
 
-            // 土地・小島の占領記録
             if (r <= 2 || r >= 12 || isIsland(r, c)) {
               landOwners[r][c] = currentTurn;
             }
@@ -567,6 +582,7 @@
       }
     }
 
+    // ダメージ分散適用処理
     function applyDamage(rawUnit, dmg) {
       if (!rawUnit) return;
       if (rawUnit.type === "hq") {
