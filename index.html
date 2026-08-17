@@ -223,19 +223,16 @@
       return ISLANDS.some(is => Math.max(Math.abs(is.r - r), Math.abs(is.c - c)) <= 1);
     }
 
-    // ユニットのステータス計算（合体対応＆輸送船化）
-    function getUnitStats(cellUnit, r) {
+    // ユニットのステータス計算（引数にcを追加してエラー修正）
+    function getUnitStats(cellUnit, r, c) {
       if (!cellUnit) return null;
       if (cellUnit.type === "hq") return cellUnit;
 
-      // 輸送船判定（陸軍ユニットが海上にいる場合）
-      const isSeaArea = (r >= 3 && r <= 11) && !isIsland(r, c);
-      
       const units = cellUnit.units || [cellUnit];
       let mainType = units[0].type;
       
       // 陸軍部隊が海にいる場合 ➔ 輸送船
-      if (mainType === "land" && (r >= 3 && r <= 11) && !isIsland(r, 0)) {
+      if (mainType === "land" && (r >= 3 && r <= 11) && !isIsland(r, c)) {
         return {
           name: "輸送船",
           type: "land",
@@ -251,7 +248,6 @@
       let totalHp = 0;
       let totalMaxHp = 0;
       let totalAtk = 0;
-      let name = units[0].name;
 
       units.forEach(u => {
         totalHp += u.hp;
@@ -259,6 +255,7 @@
         totalAtk += u.atk;
       });
 
+      let name = units[0].name;
       if (units.length > 1) {
         name = `${units[0].name}等(${units.length})`;
       }
@@ -311,7 +308,7 @@
             const visible = isVisible(r, c, currentTurn);
             
             if (rawUnit.owner === currentTurn || visible) {
-              const displayUnit = getUnitStats(rawUnit, r);
+              const displayUnit = getUnitStats(rawUnit, r, c);
               const unitEl = document.createElement("div");
               unitEl.classList.add("unit", displayUnit.owner);
               if (displayUnit.type === "hq") unitEl.classList.add("hq");
@@ -424,7 +421,7 @@
           return;
         }
 
-        const myStats = getUnitStats(myRawUnit, sr);
+        const myStats = getUnitStats(myRawUnit, sr, sc);
         const dist = Math.abs(sr - r) + Math.abs(sc - c);
 
         let maxDist = 1;
@@ -445,7 +442,7 @@
             const myUnits = myRawUnit.units || [myRawUnit];
             const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-            if (myUnits.length + targetUnits.length > 4) {alert("合体後のユニット数が4体を超えてしまうため組み合わせられません"); return; }
+            if (myUnits.length + targetUnits.length > 4) { alert("合体後のユニット数が4体を超えてしまうため組み合わせられません"); return; }
             if ((myStats.type === "sea" && targetRawUnit.type !== "sea") || 
                 (myStats.type !== "sea" && targetRawUnit.type === "sea")) {
               alert("戦艦と陸上ユニット（輸送船）は組み合わせられません");
@@ -462,7 +459,7 @@
 
           // 【敵との交戦処理】
           if (targetRawUnit && targetRawUnit.owner !== currentTurn) {
-            const targetStats = getUnitStats(targetRawUnit, r);
+            const targetStats = getUnitStats(targetRawUnit, r, c);
 
             // ダメージ計算（相手へATK、自分へ相手ATKの半分反撃）
             const dealAtk = myStats.atk;
