@@ -21,42 +21,54 @@
       margin-top: 20px;
     }
 
+    /* 9x9ボード（縦向き） */
     #board {
       display: grid;
-      grid-template-columns: repeat(8, 60px);
-      grid-template-rows: repeat(8, 60px);
+      grid-template-columns: repeat(9, 55px);
+      grid-template-rows: repeat(9, 55px);
       gap: 2px;
       background-color: #333;
       border: 4px solid #333;
     }
 
     .cell {
-      width: 60px;
-      height: 60px;
+      width: 55px;
+      height: 55px;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: bold;
       cursor: pointer;
       user-select: none;
     }
 
-    .cell.land-axis { background-color: #d4edda; }
-    .cell.sea { background-color: #cce5ff; }
-    .cell.land-allies { background-color: #f8d7da; }
+    /* マス目の属性色（縦向き：上が連合国陸地、下が軸心国陸地） */
+    .cell.land-allies { background-color: #f8d7da; } /* 連合国陸地 (行 0~1) */
+    .cell.sea { background-color: #cce5ff; }         /* 海 (行 2~6) */
+    .cell.land-axis { background-color: #d4edda; }   /* 軸心国陸地 (行 7~8) */
 
     .cell.selected { border: 3px solid #ffc107; }
 
+    /* ユニット表示 */
     .unit {
       padding: 2px 4px;
       border-radius: 4px;
       color: white;
       margin-top: 2px;
+      font-size: 10px;
+      white-space: nowrap;
     }
-    .unit.axis { background-color: #dc3545; }
-    .unit.allies { background-color: #0d6efd; }
+    .unit.axis { background-color: #dc3545; }   /* 軸心国: 赤 */
+    .unit.allies { background-color: #0d6efd; } /* 連合国: 青 */
+
+    /* 右側のコントロール */
+    #controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
 
     #hand {
       display: flex;
@@ -80,19 +92,18 @@
     }
     .card.selected { background-color: #ffe8a1; border-width: 2px; }
 
-    #end-turn-btn {
-      margin-top: 15px;
-      padding: 10px 20px;
-      font-size: 14px;
-      cursor: pointer;
+    .status-text {
+      font-weight: bold;
+      margin-bottom: 10px;
     }
   </style>
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (8x8)</h1>
+  <h1>大東亜戦術ボードゲーム (9x9)</h1>
   <div id="game-info">
-    <p>現在のターン: <span id="current-turn">軸心国 (Axis)</span></p>
+    <p>現在のターン: <span id="current-turn" class="status-text">軸心国 (Axis)</span></p>
+    <p style="color: #666; font-size: 0.9em;">※1ターンに「配置」または「移動」を1度行うと相手ターンに移ります</p>
   </div>
 
   <div id="game-container">
@@ -100,7 +111,6 @@
     <div id="controls">
       <h3>手札 (<span id="hand-owner">軸心国</span>)</h3>
       <div id="hand"></div>
-      <button id="end-turn-btn">ターン終了 (ドロー)</button>
     </div>
   </div>
 
@@ -117,11 +127,12 @@
     ];
 
     let currentTurn = "axis";
-    let board = Array(8).fill(null).map(() => Array(8).fill(null));
+    let board = Array(9).fill(null).map(() => Array(9).fill(null));
     let hands = { axis: [], allies: [] };
     let selectedHandIndex = null;
     let selectedBoardPos = null;
 
+    // ゲーム初期化（各自手札3枚で開始）
     function initGame() {
       for (let i = 0; i < 3; i++) {
         hands.axis.push(getRandomCard());
@@ -145,25 +156,35 @@
     function renderBoard() {
       const boardEl = document.getElementById("board");
       boardEl.innerHTML = "";
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
+
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
           const cell = document.createElement("div");
           cell.classList.add("cell");
-          if (c <= 1) cell.classList.add("land-axis");
-          else if (c >= 6) cell.classList.add("land-allies");
+
+          // 縦向きの属性設定 (行 r による判別)
+          // 0~1行: 連合国陸地 / 2~6行: 海 / 7~8行: 軸心国陸地
+          if (r <= 1) cell.classList.add("land-allies");
+          else if (r >= 7) cell.classList.add("land-axis");
           else cell.classList.add("sea");
 
-          if (selectedBoardPos && selectedBoardPos.r === r && selectedBoardPos.c === c) cell.classList.add("selected");
+          if (selectedBoardPos && selectedBoardPos.r === r && selectedBoardPos.c === c) {
+            cell.classList.add("selected");
+          }
 
           const unit = board[r][c];
           if (unit) {
             const unitEl = document.createElement("div");
             unitEl.classList.add("unit", unit.owner);
             let name = unit.name;
-            if (unit.type === "land" && c >= 2 && c <= 5) name = `輸送船(${unit.name})`;
+            // 海上の陸軍は「輸送船」
+            if (unit.type === "land" && r >= 2 && r <= 6) {
+              name = `輸送船`;
+            }
             unitEl.innerText = name;
             cell.appendChild(unitEl);
           }
+
           cell.onclick = () => handleCellClick(r, c);
           boardEl.appendChild(cell);
         }
@@ -173,52 +194,95 @@
     function renderHand() {
       const handEl = document.getElementById("hand");
       handEl.innerHTML = "";
+
       hands[currentTurn].forEach((card, index) => {
         const cardEl = document.createElement("div");
         cardEl.classList.add("card");
         if (selectedHandIndex === index) cardEl.classList.add("selected");
         cardEl.innerText = `[${card.type}] ${card.name}`;
-        cardEl.onclick = () => { selectedHandIndex = index; selectedBoardPos = null; render(); };
+        cardEl.onclick = () => {
+          selectedHandIndex = index;
+          selectedBoardPos = null; // 盤面選択解除
+          render();
+        };
         handEl.appendChild(cardEl);
       });
     }
 
+    // マスクリック（配置 または 移動）
     function handleCellClick(r, c) {
-      const isSea = (c >= 2 && c <= 5);
-      const isCoast = (currentTurn === "axis" && c === 2) || (currentTurn === "allies" && c === 5);
-      const isOwnLand = (currentTurn === "axis" && c <= 1) || (currentTurn === "allies" && c >= 6);
+      // 縦マップの条件
+      const isSea = (r >= 2 && r <= 6);
+      const isCoast = (currentTurn === "axis" && r === 6) || (currentTurn === "allies" && r === 2);
+      const isOwnLand = (currentTurn === "axis" && r >= 7) || (currentTurn === "allies" && r <= 1);
 
+      // 【1. 配置（手札を選択中）】
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
-        if (board[r][c] !== null) { alert("既にユニットがいます"); return; }
-        if (card.type === "land" && !isOwnLand) { alert("陸地のみ配置可能"); return; }
-        if (card.type === "sea" && !isCoast) { alert("海岸のみ配置可能"); return; }
+        if (board[r][c] !== null) {
+          alert("既にユニットが存在します");
+          return;
+        }
 
+        // 配置条件チェック
+        if (card.type === "land" && !isOwnLand) {
+          alert("陸軍ユニットは自軍の陸地にしか配置できません");
+          return;
+        }
+        if (card.type === "sea" && !isCoast) {
+          alert("海軍ユニットは自軍海岸(海マス)にしか配置できません");
+          return;
+        }
+        if (card.type === "air" && !isOwnLand) {
+          alert("航空ユニットは自軍の陸地にしか配置できません");
+          return;
+        }
+
+        // 配置成功
         board[r][c] = { ...card, owner: currentTurn };
         hands[currentTurn].splice(selectedHandIndex, 1);
         selectedHandIndex = null;
-        render();
+        
+        // アクション完了 ➔ 自動ターン終了
+        finishTurn();
         return;
       }
 
+      // 【2. 移動（既に自分のユニットを選択中）】
       if (selectedBoardPos) {
         const { r: sr, c: sc } = selectedBoardPos;
         const unit = board[sr][sc];
+
+        // 移動距離の計算 (マンハッタン距離)
         const dist = Math.abs(sr - r) + Math.abs(sc - c);
-        const maxDist = (unit.type === "sea") ? 2 : 1;
+
+        // 最大移動距離の判定
+        let maxDist = 1;
+        if (unit.type === "sea" || unit.type === "air") {
+          maxDist = 2; // 海軍・空軍は2マス
+        }
 
         if (dist > 0 && dist <= maxDist) {
+          if (board[r][c] !== null) {
+            alert("既にユニットがいるマスには移動できません");
+            return;
+          }
+          // 移動成功
           board[r][c] = unit;
           board[sr][sc] = null;
           selectedBoardPos = null;
-          render();
+
+          // アクション完了 ➔ 自動ターン終了
+          finishTurn();
         } else {
+          // 移動不可マスを選択した場合は選択解除
           selectedBoardPos = null;
           render();
         }
         return;
       }
 
+      // 【3. ユニット選択】
       if (board[r][c] && board[r][c].owner === currentTurn) {
         selectedBoardPos = { r, c };
         selectedHandIndex = null;
@@ -226,14 +290,16 @@
       }
     }
 
-    document.getElementById("end-turn-btn").onclick = () => {
-      hands[currentTurn].push(getRandomCard());
-      currentTurn = currentTurn === "axis" ? "allies" : "axis";
+    // 行動完了時の処理（山札から1枚引いて相手のターンへ）
+    function finishTurn() {
+      hands[currentTurn].push(getRandomCard()); // 1枚ドロー
+      currentTurn = currentTurn === "axis" ? "allies" : "axis"; // ターン交代
       selectedHandIndex = null;
       selectedBoardPos = null;
       render();
-    };
+    }
 
+    // ゲーム開始
     initGame();
   </script>
 </body>
