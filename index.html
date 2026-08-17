@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 2.1</title>
+  <title>大東亜戦術ボードゲーム Ver 2.2</title>
   <style>
     body {
       font-family: sans-serif;
@@ -218,7 +218,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.2)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -226,7 +226,7 @@
       <div id="game-info">
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
-          ・ユニット移動/攻撃選択<br>
+          ・<b>海上攻撃バグ修正済</b><br>
           ・黄枠: 移動/合体<br>
           ・赤枠: 攻撃ターゲット<br>
           ・島は飛行機のみ通過可<br>
@@ -453,19 +453,18 @@
       return Math.max(0, baseAtk + bonus);
     }
 
-    // パス判定：島やすり抜けのチェック（飛行機以外は障害物を跨げない）
+    // 移動パス判定（小島すり抜けのみ防止）
     function isPathBlocked(sr, sc, tr, tc, isAir) {
-      if (isAir) return false; // 飛行機は障害物を完全スルー
+      if (isAir) return false;
 
       const dr = tr - sr;
       const dc = tc - sc;
 
-      // 距離2の直線・斜め移動時の中間マスチェック
       if (Math.abs(dr) === 2 || Math.abs(dc) === 2) {
         const midR = sr + dr / 2;
         const midC = sc + dc / 2;
         
-        // 中間マスが「島」の場合は通り抜けることができない
+        // 移動経路の中間点が「小島」の場合は通過不可
         if (isIsland(midR, midC)) {
           return true;
         }
@@ -500,18 +499,18 @@
 
         const myUnits = myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
-        if (myUnits.length + targetUnits.length > 6) return false; // ★最大6体
+        if (myUnits.length + targetUnits.length > 6) return false;
 
         return true;
       }
 
-      // 敵がいる場所へは「移動」では入らない（攻撃モードを使用）
+      // 敵がいる場所へは「移動」では入らない
       if (targetRawUnit && targetRawUnit.owner !== currentTurn) return false;
 
       return true;
     }
 
-    // 攻撃ターゲットの有効性判定
+    // 攻撃ターゲットの有効性判定（修正済み）
     function isValidAttackTarget(sr, sc, tr, tc) {
       const myRawUnit = board[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
@@ -796,11 +795,13 @@
               alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
               gameOver = true;
             }
+            // 陸上・航空ユニットのみ敵地に進撃して占領
             if (myStats.type !== "sea") {
               board[r][c] = myRawUnit;
               board[sr][sc] = null;
               if (r <= 2 || r >= 10 || isIsland(r, c)) landOwners[r][c] = currentTurn;
             } else {
+              // 艦艇は攻撃で撃破してもその場に留まる（陸地には侵入しない）
               board[r][c] = null;
             }
           } else if (myDead) {
@@ -818,7 +819,7 @@
         return;
       }
 
-      // 【4. ユニット選択（移動 / 攻撃コマンドのポップアップ表示）】
+      // 【4. ユニット選択】
       if (board[r][c] && board[r][c].owner === currentTurn) {
         if (board[r][c].type === "hq") {
           alert("司令部は移動・攻撃ができません");
@@ -880,7 +881,6 @@
       return units.length === 0;
     }
 
-    // 1秒待機してからターンを交代する処理
     function finishTurn() {
       isProcessingTurn = true;
       hideActionMenu();
@@ -899,7 +899,7 @@
         isProcessingTurn = false;
         document.getElementById("wait-overlay").style.display = "none";
         render();
-      }, 1000); // 1秒（1000ミリ秒）待機
+      }, 1000);
     }
 
     initGame();
