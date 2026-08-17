@@ -168,8 +168,6 @@
     let currentTurn = "axis";
     let board = Array(15).fill(null).map(() => Array(15).fill(null));
 
-    // マップ設定 (0~2:連合陸 / 3~11:海 / 12~14:軸心陸)
-    // 3個の小島を配置 (行, 列)
     const ISLANDS = [{r: 5, c: 3}, {r: 7, c: 7}, {r: 9, c: 11}];
 
     let landOwners = Array(15).fill(null).map((_, r) => {
@@ -184,7 +182,6 @@
     let gameOver = false;
 
     function initGame() {
-      // 司令部配置（最奥中央 c=7）
       board[0][7] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "allies", units: [] };
       board[14][7] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "axis", units: [] };
 
@@ -200,7 +197,6 @@
       return { ...CARD_TYPES[rand] };
     }
 
-    // 周囲2マスの視界判定
     function isVisible(r, c, owner) {
       for (let br = 0; br < 15; br++) {
         for (let bc = 0; bc < 15; bc++) {
@@ -213,25 +209,23 @@
       return false;
     }
 
-    // マスが島かどうか
     function isIsland(r, c) {
       return ISLANDS.some(is => is.r === r && is.c === c);
     }
 
-    // 島に隣接しているか判定
     function isAdjacentToIsland(r, c) {
       return ISLANDS.some(is => Math.max(Math.abs(is.r - r), Math.abs(is.c - c)) <= 1);
     }
 
-    // ユニットのステータス計算（引数にcを追加してエラー修正）
     function getUnitStats(cellUnit, r, c) {
       if (!cellUnit) return null;
       if (cellUnit.type === "hq") return cellUnit;
 
       const units = cellUnit.units || [cellUnit];
+      if (!units || units.length === 0) return null;
+
       let mainType = units[0].type;
       
-      // 陸軍部隊が海にいる場合 ➔ 輸送船
       if (mainType === "land" && (r >= 3 && r <= 11) && !isIsland(r, c)) {
         return {
           name: "輸送船",
@@ -244,7 +238,6 @@
         };
       }
 
-      // 合体時の能力合算
       let totalHp = 0;
       let totalMaxHp = 0;
       let totalAtk = 0;
@@ -292,7 +285,6 @@
           const cell = document.createElement("div");
           cell.classList.add("cell");
 
-          // マス色設定
           if (isIsland(r, c)) cell.classList.add("island");
           else if (landOwners[r][c] === "axis") cell.classList.add("land-axis");
           else if (landOwners[r][c] === "allies") cell.classList.add("land-allies");
@@ -302,37 +294,44 @@
             cell.classList.add("selected");
           }
 
-          const rawUnit = board[r][c];
-          
+          let rawUnit = board[r][c];
+
+          // 撃破されたユニットデータの掃除
+          if (rawUnit && isDead(rawUnit)) {
+            board[r][c] = null;
+            rawUnit = null;
+          }
+
           if (rawUnit) {
             const visible = isVisible(r, c, currentTurn);
             
             if (rawUnit.owner === currentTurn || visible) {
               const displayUnit = getUnitStats(rawUnit, r, c);
-              const unitEl = document.createElement("div");
-              unitEl.classList.add("unit", displayUnit.owner);
-              if (displayUnit.type === "hq") unitEl.classList.add("hq");
+              if (displayUnit) {
+                const unitEl = document.createElement("div");
+                unitEl.classList.add("unit", displayUnit.owner);
+                if (displayUnit.type === "hq") unitEl.classList.add("hq");
 
-              const hpPercent = Math.max(0, Math.min(100, (displayUnit.hp / displayUnit.maxHp) * 100));
+                const hpPercent = Math.max(0, Math.min(100, (displayUnit.hp / displayUnit.maxHp) * 100));
 
-              unitEl.innerHTML = `
-                <div style="font-weight:bold;">${displayUnit.name}</div>
-                <div class="hp-bar-bg">
-                  <div class="hp-bar-fill" style="width: ${hpPercent}%;"></div>
-                </div>
-                <div style="font-size:7px; margin-top:1px;">${displayUnit.hp}/${displayUnit.atk}</div>
-              `;
+                unitEl.innerHTML = `
+                  <div style="font-weight:bold;">${displayUnit.name}</div>
+                  <div class="hp-bar-bg">
+                    <div class="hp-bar-fill" style="width: ${hpPercent}%;"></div>
+                  </div>
+                  <div style="font-size:7px; margin-top:1px;">${displayUnit.hp}/${displayUnit.atk}</div>
+                `;
 
-              // スタック数表示
-              const unitCount = rawUnit.units ? rawUnit.units.length : 1;
-              if (unitCount > 1 && displayUnit.type !== "hq") {
-                const badge = document.createElement("div");
-                badge.classList.add("stack-badge");
-                badge.innerText = unitCount;
-                cell.appendChild(badge);
+                const unitCount = rawUnit.units ? rawUnit.units.length : 1;
+                if (unitCount > 1 && displayUnit.type !== "hq") {
+                  const badge = document.createElement("div");
+                  badge.classList.add("stack-badge");
+                  badge.innerText = unitCount;
+                  cell.appendChild(badge);
+                }
+
+                cell.appendChild(unitEl);
               }
-
-              cell.appendChild(unitEl);
             }
           }
 
@@ -372,7 +371,6 @@
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
         
-        // すでに自分のユニットがいる場合は合体配置
         if (board[r][c] !== null) {
           const target = board[r][c];
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
@@ -381,7 +379,6 @@
           const targetUnits = target.units || [target];
           if (targetUnits.length >= 4) { alert("これ以上ユニットを組み合わせられません（最大4体）"); return; }
           
-          // 戦艦と陸軍/輸送船の合体不可チェック
           if ((card.type === "sea" && targetUnits[0].type !== "sea") || 
               (card.type !== "sea" && targetUnits[0].type === "sea")) {
             alert("戦艦と陸上ユニット（輸送船）は組み合わせられません");
@@ -396,7 +393,6 @@
           return;
         }
 
-        // 新規配置ルール
         if (card.type === "land" && !isOwnLand) { alert("陸上ユニットは自軍の陸地にしか配置できません"); return; }
         if (card.type === "sea" && (!isCoast && !isNearIsland)) { alert("戦艦は自軍沿岸または小島に接する海にしか配置できません"); return; }
         if (card.type === "air" && !isOwnLand) { alert("航空ユニットは自軍の陸地にしか配置できません"); return; }
@@ -413,9 +409,8 @@
         const { r: sr, c: sc } = selectedBoardPos;
         const myRawUnit = board[sr][sc];
         
-        // 司令部は移動不可
-        if (myRawUnit.type === "hq") {
-          alert("司令部は移動できません");
+        if (!myRawUnit || myRawUnit.type === "hq") {
+          if (myRawUnit && myRawUnit.type === "hq") alert("司令部は移動できません");
           selectedBoardPos = null;
           render();
           return;
@@ -430,7 +425,7 @@
         if (dist > 0 && dist <= maxDist) {
           const targetRawUnit = board[r][c];
 
-          // 【味方との合体処理】
+          // 味方との合体
           if (targetRawUnit && targetRawUnit.owner === currentTurn) {
             if (targetRawUnit.type === "hq") {
               alert("司令部には合体できません");
@@ -449,7 +444,6 @@
               return;
             }
 
-            // 合体実行
             targetRawUnit.units = [...targetUnits, ...myUnits];
             board[sr][sc] = null;
             selectedBoardPos = null;
@@ -457,22 +451,29 @@
             return;
           }
 
-          // 【敵との交戦処理】
+          // 敵との交戦
           if (targetRawUnit && targetRawUnit.owner !== currentTurn) {
             const targetStats = getUnitStats(targetRawUnit, r, c);
 
-            // ダメージ計算（相手へATK、自分へ相手ATKの半分反撃）
             const dealAtk = myStats.atk;
             const counterAtk = Math.floor(targetStats.atk / 2);
 
             alert(`【交戦！】\n敵に ${dealAtk} ダメージを与えました！\n(反撃で ${counterAtk} ダメージを受けました)`);
 
-            // ダメージの適用（合体ユニットのHP減算処理）
             applyDamage(targetRawUnit, dealAtk);
             applyDamage(myRawUnit, counterAtk);
 
-            // 敵撃破判定
-            if (isDead(targetRawUnit)) {
+            const targetDead = isDead(targetRawUnit);
+            const myDead = isDead(myRawUnit);
+
+            // 相打ち（両方死亡）
+            if (targetDead && myDead) {
+              alert("相打ちとなり、両軍ともに全滅しました！");
+              board[r][c] = null;
+              board[sr][sc] = null;
+            } 
+            // 敵のみ撃破（占領）
+            else if (targetDead) {
               alert(`敵部隊を撃破・占領しました！`);
               if (targetRawUnit.type === "hq") {
                 const winner = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
@@ -483,15 +484,14 @@
               board[sr][sc] = null;
 
               if (r <= 2 || r >= 12) landOwners[r][c] = currentTurn;
-            }
-
-            // 自軍撃破判定
-            if (isDead(myRawUnit)) {
+            } 
+            // 自分のみ返り討ち
+            else if (myDead) {
               alert("自軍部隊が返り討ちに遭い壊滅しました...");
               board[sr][sc] = null;
             }
           } 
-          // 【通常移動】
+          // 通常移動
           else {
             board[r][c] = myRawUnit;
             board[sr][sc] = null;
@@ -517,7 +517,6 @@
       }
     }
 
-    // 部隊へのダメージ分散処理
     function applyDamage(rawUnit, dmg) {
       if (!rawUnit) return;
       if (rawUnit.type === "hq") {
