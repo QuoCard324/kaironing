@@ -47,15 +47,9 @@
       position: relative;
     }
 
-    /* マス目の属性色：自他問わず陸は黄緑、海は青に統一 */
+    /* マス目の属性色：いつでも常に見える（陸＝黄緑、海＝青） */
     .cell.land { background-color: #a8e6cf; } /* 明るい黄緑 */
     .cell.sea { background-color: #aed9e0; }  /* 明るい青 */
-
-    /* 視界外（影） */
-    .cell.fog {
-      background-color: #78909c !important; /* グレー表示 */
-      opacity: 0.65;
-    }
 
     .cell.selected { border: 3px solid #ffc107; z-index: 10; }
 
@@ -135,7 +129,7 @@
   <h1>大東亜戦術ボードゲーム (14x14)</h1>
   <div id="game-info">
     <p>現在のターン: <span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
-    <p style="color: #666; font-size: 0.85em;">※自軍ユニットの周囲2マスのみ視界が通ります（グレーのマスは視界外）</p>
+    <p style="color: #666; font-size: 0.85em;">※敵ユニットは自軍ユニットの周囲2マス以内に近づくと姿を現します</p>
   </div>
 
   <div id="game-container">
@@ -177,7 +171,7 @@
       return { ...CARD_TYPES[rand] };
     }
 
-    // 周囲2マス以内かの視界判定
+    // 周囲2マス以内（視界内）かの判定
     function isVisible(r, c, owner) {
       for (let br = 0; br < 14; br++) {
         for (let bc = 0; bc < 14; bc++) {
@@ -211,40 +205,39 @@
           const cell = document.createElement("div");
           cell.classList.add("cell");
 
-          // マス目属性（陸はすべて黄緑、海はすべて青）
+          // マス目属性（陸＝黄緑、海＝青）※マップ自体はいつでも綺麗に見える
           if (r <= 2 || r >= 11) cell.classList.add("land");
           else cell.classList.add("sea");
-
-          // 視界チェック
-          const visible = isVisible(r, c, currentTurn);
-          if (!visible) {
-            cell.classList.add("fog");
-          }
 
           if (selectedBoardPos && selectedBoardPos.r === r && selectedBoardPos.c === c) {
             cell.classList.add("selected");
           }
 
           const unit = board[r][c];
-          // 自分のユニット、または視界内の敵のみ描画
-          if (unit && (unit.owner === currentTurn || visible)) {
-            const unitEl = document.createElement("div");
-            unitEl.classList.add("unit", unit.owner);
+          
+          // 【表示条件】自分のユニット、または「自軍から2マス以内にいる敵ユニット」のみ描画
+          if (unit) {
+            const visible = isVisible(r, c, currentTurn);
+            
+            if (unit.owner === currentTurn || visible) {
+              const unitEl = document.createElement("div");
+              unitEl.classList.add("unit", unit.owner);
 
-            let name = unit.name;
-            if (unit.type === "land" && r >= 3 && r <= 10) name = "輸送船";
+              let name = unit.name;
+              if (unit.type === "land" && r >= 3 && r <= 10) name = "輸送船";
 
-            // HP割合計算
-            const hpPercent = Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100));
+              // HP割合計算
+              const hpPercent = Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100));
 
-            unitEl.innerHTML = `
-              <div style="font-weight:bold;">${name}</div>
-              <div class="hp-bar-bg">
-                <div class="hp-bar-fill" style="width: ${hpPercent}%;"></div>
-              </div>
-              <div style="font-size:7px; margin-top:1px;">${unit.hp}/${unit.atk}</div>
-            `;
-            cell.appendChild(unitEl);
+              unitEl.innerHTML = `
+                <div style="font-weight:bold;">${name}</div>
+                <div class="hp-bar-bg">
+                  <div class="hp-bar-fill" style="width: ${hpPercent}%;"></div>
+                </div>
+                <div style="font-size:7px; margin-top:1px;">${unit.hp}/${unit.atk}</div>
+              `;
+              cell.appendChild(unitEl);
+            }
           }
 
           cell.onclick = () => handleCellClick(r, c);
