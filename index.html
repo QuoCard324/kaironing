@@ -145,7 +145,7 @@
   <h1>大東亜戦術ボードゲーム (15x15)</h1>
   <div id="game-info">
     <p>現在のターン: <span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
-    <p style="color: #666; font-size: 0.8em;">※反撃確率70% / 残HPに比例してATK低下 / 戦艦は陸地・島への乗り込み不可</p>
+    <p style="color: #666; font-size: 0.8em;">※輸送船はHP30/ATK5固定 / 同種ユニットのみ合体可 / 手札上限7枚</p>
   </div>
 
   <div id="game-container">
@@ -172,7 +172,6 @@
 
     const ISLANDS = [{r: 5, c: 3}, {r: 7, c: 7}, {r: 9, c: 11}];
 
-    // 土地・島の所有者管理
     let landOwners = Array(15).fill(null).map((_, r) => {
       if (r <= 2) return Array(15).fill("allies");
       if (r >= 12) return Array(15).fill("axis");
@@ -188,7 +187,8 @@
       board[0][7] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "allies", units: [] };
       board[14][7] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "axis", units: [] };
 
-      for (let i = 0; i < 3; i++) {
+      // 初期手札4枚
+      for (let i = 0; i < 4; i++) {
         hands.axis.push(getRandomCard());
         hands.allies.push(getRandomCard());
       }
@@ -222,20 +222,51 @@
       });
     }
 
-    // ユニットのステータス計算
+    // ユニットの基本種別判定（陸・空・海）
+    function getCategory(unit) {
+      if (!unit) return null;
+      if (unit.type === "hq") return "hq";
+      const u = (unit.units && unit.units.length > 0) ? unit.units[0] : unit;
+      return u.type;
+    }
+
+    // ステータス計算
     function getUnitStats(cellUnit, r, c) {
       if (!cellUnit) return null;
       if (cellUnit.type === "hq") {
-        return {
-          ...cellUnit,
-          currentAtk: 0
-        };
+        return { ...cellUnit, currentAtk: 0 };
       }
 
       const units = cellUnit.units || [cellUnit];
       if (!units || units.length === 0) return null;
 
       let mainType = units[0].type;
+
+      // ★輸送船の処理（海の上にいる陸上ユニット）
+      if (mainType === "land" && (r >= 3 && r <= 11) && !isIsland(r, c)) {
+        // ダメージ状態の保持（初回進入時に輸送船用HPをセット）
+        if (cellUnit.transportHp === undefined) {
+          cellUnit.transportHp = 30;
+        }
+
+        let curHp = cellUnit.transportHp;
+        let hpRatio = curHp / 30;
+        let curAtk = Math.max(1, Math.round(5 * hpRatio)); // ★ATKは5固定（比例減少）
+
+        return {
+          name: units.length > 1 ? `輸送船等(${units.length})` : "輸送船",
+          type: "land",
+          isTransport: true,
+          hp: curHp,
+          maxHp: 30, // ★HP 30固定
+          atk: 5,
+          currentAtk: curAtk,
+          owner: cellUnit.owner,
+          units: units
+        };
+      }
+
+      // 通常ユニットの計算
       let totalHp = 0;
       let totalMaxHp = 0;
       let totalBaseAtk = 0;
@@ -246,28 +277,10 @@
         totalBaseAtk += u.atk;
       });
 
-      // 残HPの割合に応じてATKを計算（残HP% に比例）
       let hpRatio = totalMaxHp > 0 ? (totalHp / totalMaxHp) : 0;
       let currentAtk = Math.max(1, Math.round(totalBaseAtk * hpRatio));
 
       let name = units[0].name;
-      
-      // ★輸送船の場合（海の上にいる陸上ユニット）
-      if (mainType === "land" && (r >= 3 && r <= 11) && !isIsland(r, c)) {
-        name = units.length > 1 ? `輸送船等(${units.length})` : "輸送船";
-        // 輸送船としてのステータス反映（実際の合算HPとMaxHPを使用）
-        return {
-          name: name,
-          type: "land",
-          hp: totalHp,
-          maxHp: totalMaxHp,
-          atk: totalBaseAtk,
-          currentAtk: currentAtk,
-          owner: cellUnit.owner,
-          units: units
-        };
-      }
-
       if (units.length > 1) {
         name = `${units[0].name}等(${units.length})`;
       }
@@ -284,7 +297,6 @@
       };
     }
 
-    // 爆撃機の特攻ボーナス攻撃力計算
     function calculateAttack(attacker, defender) {
       let baseAtk = attacker.currentAtk;
       let bonus = 0;
@@ -309,7 +321,7 @@
       turnEl.className = `status-text ${currentTurn}-text`;
 
       document.getElementById("hand-owner").innerText = currentTurn === "axis" ? "軸心国" : "連合国";
-      document.getElementById("hand-count").innerText = `(${hands[currentTurn].length}/5枚)`;
+      document.getElementById("hand-count").innerText = `(${hands[currentTurn].length}/7枚)`;
       
       renderBoard();
       renderHand();
@@ -339,7 +351,7 @@
 
           let rawUnit = board[r][c];
 
-          if (rawUnit && isDead(rawUnit)) {
+          if (rawUnit && isDead(rawUnit, r, c)) {
             board[r][c] = null;
             rawUnit = null;
           }
@@ -413,16 +425,17 @@
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
 
-        if (card.type === "sea" && board[r][c] !== null) {
-          alert("戦艦は他のユニットに乗込（合体）させることはできません");
-          return;
-        }
-
         if (board[r][c] !== null) {
           const target = board[r][c];
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
           if (target.type === "hq") { alert("司令部には合体できません"); return; }
-          if (target.type === "sea") { alert("戦艦に他のユニットを合体させることはできません"); return; }
+
+          // ★ルール：同種同士のみ合体可能（陸上なら陸上、海なら海、空なら空）
+          const targetCat = getCategory(target);
+          if (card.type !== targetCat) {
+            alert("異なる種類のユニット（例: 戦艦と輸送船など）は組み合わせられません");
+            return;
+          }
 
           const targetUnits = target.units || [target];
           if (targetUnits.length >= 4) { alert("これ以上ユニットを組み合わせられません（最大4体）"); return; }
@@ -435,7 +448,7 @@
           return;
         }
 
-        // 配置条件
+        // 配置制限
         if (card.type === "land" && !isOwnLand) { alert("陸上ユニットは自軍の陸地にしか配置できません"); return; }
         if (card.type === "sea" && (!isCoast && !isNearOwnedIsland)) { 
           alert("戦艦は自軍沿岸、または【占領済みの小島】に接する海にしか配置できません"); 
@@ -469,7 +482,6 @@
         if (myStats.type === "sea" || myStats.type === "air") maxDist = 2;
 
         if (dist > 0 && dist <= maxDist) {
-          // ★ルール：戦艦は「敵の陸地」および「3つの島マス全般」へ乗り込み（進入）不可
           const isEnemyLand = (currentTurn === "axis" && r <= 2) || (currentTurn === "allies" && r >= 12);
           if (myStats.type === "sea" && (isEnemyLand || isIsland(r, c))) {
             alert("戦艦は陸地や島へ乗り込むことはできません（海から攻撃してください）");
@@ -482,14 +494,19 @@
 
           // 味方との合体
           if (targetRawUnit && targetRawUnit.owner === currentTurn) {
-            if (myStats.type === "sea" || targetRawUnit.type === "sea") {
-              alert("戦艦は乗り込み（合体）できません");
+            if (targetRawUnit.type === "hq") {
+              alert("司令部には合体できません");
               selectedBoardPos = null;
               render();
               return;
             }
-            if (targetRawUnit.type === "hq") {
-              alert("司令部には合体できません");
+
+            // ★ルール：同種カテゴリ同士（戦艦同士、輸送船同士など）しか合体できない
+            const myCat = getCategory(myRawUnit);
+            const targetCat = getCategory(targetRawUnit);
+
+            if (myCat !== targetCat) {
+              alert("異なる種類のユニット（例: 戦艦と輸送船など）は組み合わせられません");
               selectedBoardPos = null;
               render();
               return;
@@ -498,7 +515,7 @@
             const myUnits = myRawUnit.units || [myRawUnit];
             const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-            if (myUnits.length + targetUnits.length > 4) { alert("合体後のユニット数が4体を超えてしまうため組み合わせられません"); return; }
+            if (myUnits.length + targetUnits.length > 4) { alert("合体後のユニット数が4体を超えてしまうため組み合わせられません（最大4体）"); return; }
 
             targetRawUnit.units = [...targetUnits, ...myUnits];
             board[sr][sc] = null;
@@ -513,7 +530,6 @@
 
             const dealAtk = calculateAttack(myStats, targetStats);
 
-            // ★ルール：反撃確率は 70%
             const isCountered = Math.random() < 0.70;
             const counterAtk = isCountered ? Math.floor(calculateAttack(targetStats, myStats) / 2) : 0;
 
@@ -522,13 +538,11 @@
 
             alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！${counterMsg}`);
 
-            applyDamage(targetRawUnit, dealAtk);
-            if (isCountered) {
-              applyDamage(myRawUnit, counterAtk);
-            }
+            applyDamage(myRawUnit, counterAtk, sr, sc);
+            applyDamage(targetRawUnit, dealAtk, r, c);
 
-            const targetDead = isDead(targetRawUnit);
-            const myDead = isDead(myRawUnit);
+            const targetDead = isDead(targetRawUnit, r, c);
+            const myDead = isDead(myRawUnit, sr, sc);
 
             if (targetDead && myDead) {
               alert("相打ちとなり、両軍ともに全滅しました！");
@@ -582,13 +596,27 @@
       }
     }
 
-    // ダメージ分散適用処理
-    function applyDamage(rawUnit, dmg) {
-      if (!rawUnit) return;
+    // ダメージ処理
+    function applyDamage(rawUnit, dmg, r, c) {
+      if (!rawUnit || dmg <= 0) return;
       if (rawUnit.type === "hq") {
         rawUnit.hp -= dmg;
         return;
       }
+
+      const stats = getUnitStats(rawUnit, r, c);
+
+      // ★輸送船の場合
+      if (stats && stats.isTransport) {
+        if (rawUnit.transportHp === undefined) rawUnit.transportHp = 30;
+        rawUnit.transportHp -= dmg;
+        if (rawUnit.transportHp <= 0) {
+          rawUnit.units = [];
+        }
+        return;
+      }
+
+      // 通常ユニットの場合
       let remainingDmg = dmg;
       let units = rawUnit.units || [rawUnit];
       
@@ -604,15 +632,21 @@
       rawUnit.units = units.filter(u => u.hp > 0);
     }
 
-    function isDead(rawUnit) {
+    function isDead(rawUnit, r, c) {
       if (!rawUnit) return true;
       if (rawUnit.type === "hq") return rawUnit.hp <= 0;
+      
+      if (rawUnit.transportHp !== undefined && (r >= 3 && r <= 11) && !isIsland(r, c)) {
+        return rawUnit.transportHp <= 0;
+      }
+
       const units = rawUnit.units || [rawUnit];
       return units.length === 0;
     }
 
     function finishTurn() {
-      if (hands[currentTurn].length < 5) {
+      // ★手札上限は「7枚」
+      if (hands[currentTurn].length < 7) {
         hands[currentTurn].push(getRandomCard());
       }
       currentTurn = currentTurn === "axis" ? "allies" : "axis";
