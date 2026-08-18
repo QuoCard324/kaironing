@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 2.4</title>
+  <title>大東亜戦術ボードゲーム Ver 2.5</title>
   <style>
     body {
       font-family: sans-serif;
@@ -199,7 +199,41 @@
     }
     #action-menu .btn-move { background-color: #ffea00; }
     #action-menu .btn-atk { background-color: #ff6b6b; color: white; }
+    #action-menu .btn-split { background-color: #17a2b8; color: white; }
     #action-menu .btn-cancel { background-color: #e0e0e0; }
+
+    /* 分割モーダルダイアログ */
+    #split-modal {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1100;
+    }
+    .modal-content {
+      background: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      min-width: 240px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      text-align: left;
+    }
+    .split-list {
+      margin: 10px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .split-item {
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
     /* ターン待機オーバーレイ */
     #wait-overlay {
@@ -218,7 +252,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.4)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.5)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -226,13 +260,11 @@
       <div id="game-info">
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
-          ・<b>潜水艦ターゲット修正</b><br>
-           - 潜水艦は「戦艦」「輸送船」を攻撃可<br>
-           - 輸送船からの反撃不可<br>
-          ・黄枠: 移動/合体<br>
-          ・赤枠: 攻撃ターゲット<br>
-          ・島は飛行機のみ通過可<br>
-          ・最大6体合体まで可能
+          ・<b>分割機能追加</b><br>
+           - スタック部隊から好きなユニットだけを選んで移動・攻撃可<br>
+          ・<b>艦艇スポーン厳格化</b><br>
+           - 駆逐艦含む海軍は「占領地の沿岸(海)」のみ配置可<br>
+          ・黄枠: 移動/合体 / 赤枠: 攻撃
         </p>
       </div>
     </div>
@@ -243,6 +275,7 @@
       <div id="action-menu">
         <button class="btn-move" onclick="selectActionMode('move')">🏃‍♂️ 移動</button>
         <button class="btn-atk" onclick="selectActionMode('attack')">⚔️ 攻撃</button>
+        <button id="btn-split-cmd" class="btn-split" onclick="openSplitModal()">✂️ 分割</button>
         <button class="btn-cancel" onclick="cancelActionMode()">❌ キャンセル</button>
       </div>
     </div>
@@ -250,6 +283,19 @@
     <div id="controls">
       <h3 style="margin:0 0 10px 0;">手札 (<span id="hand-owner">軸心国</span>) <span id="hand-count" style="font-size:11px;"></span></h3>
       <div id="hand"></div>
+    </div>
+  </div>
+
+  <!-- 分割モーダル -->
+  <div id="split-modal">
+    <div class="modal-content">
+      <h3 style="margin:0 0 10px 0; font-size:16px;">分離するユニットを選択</h3>
+      <div class="split-list" id="split-list"></div>
+      <div style="display:flex; justify-content:space-between; margin-top:12px; gap:6px;">
+        <button onclick="confirmSplit('move')" style="background:#ffea00; border:1px solid #aaa; padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">分離して移動</button>
+        <button onclick="confirmSplit('attack')" style="background:#ff6b6b; color:white; border:none; padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">分離して攻撃</button>
+        <button onclick="closeSplitModal()" style="background:#ccc; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">中止</button>
+      </div>
     </div>
   </div>
 
@@ -278,6 +324,7 @@
     let selectedHandIndex = null;
     let selectedBoardPos = null;
     let actionMode = null; // 'move' or 'attack'
+    let selectedSubUnits = null; // 分割時に一時分離されたユニットリスト
     let gameOver = false;
     let isProcessingTurn = false;
 
@@ -293,6 +340,7 @@
       selectedHandIndex = null;
       selectedBoardPos = null;
       actionMode = null;
+      selectedSubUnits = null;
       gameOver = false;
       isProcessingTurn = false;
 
@@ -354,7 +402,11 @@
       return landOwners[r][c] === owner;
     }
 
+    // 指定のマスが「海」かつ「自軍の占領地に隣接しているか」を判定
     function isCoastOfOwnedLand(r, c, owner) {
+      // そもそも陸地マスなら沿岸の海ではない
+      if (landOwners[r][c] !== null || isIsland(r, c)) return false;
+
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           if (dr === 0 && dc === 0) continue;
@@ -377,13 +429,13 @@
       return u.type;
     }
 
-    function getUnitStats(cellUnit, r, c) {
+    function getUnitStats(cellUnit, r, c, customUnits = null) {
       if (!cellUnit) return null;
       if (cellUnit.type === "hq") {
         return { ...cellUnit, currentAtk: 0, vision: 1 };
       }
 
-      const units = cellUnit.units || [cellUnit];
+      const units = customUnits || cellUnit.units || [cellUnit];
       if (!units || units.length === 0) return null;
 
       let mainType = units[0].type;
@@ -489,7 +541,7 @@
       const myRawUnit = board[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
 
-      const myStats = getUnitStats(myRawUnit, sr, sc);
+      const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
       const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
       let maxDist = (myStats.type === "sea" || myStats.type === "air") ? 2 : 1;
 
@@ -506,7 +558,7 @@
         if (targetRawUnit.type === "hq") return false;
         if (getCategory(myRawUnit) !== getCategory(targetRawUnit)) return false;
 
-        const myUnits = myRawUnit.units || [myRawUnit];
+        const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
         if (myUnits.length + targetUnits.length > 6) return false;
 
@@ -522,7 +574,7 @@
       const myRawUnit = board[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
 
-      const myStats = getUnitStats(myRawUnit, sr, sc);
+      const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
       const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
       let maxDist = (myStats.type === "sea" || myStats.type === "air") ? 2 : 1;
 
@@ -533,17 +585,14 @@
 
       if (!isVisible(tr, tc, currentTurn)) return false;
 
-      // 【修正箇所】潜水艦の攻撃対象判定
       if (myStats.isSub) {
         const targetStats = getUnitStats(targetRawUnit, tr, tc);
         if (!targetStats) return false;
-        // 戦艦、または輸送船（海上の陸軍）であれば攻撃対象として許可
         const isBattleship = targetStats.name.indexOf("戦艦") !== -1;
         const isTransport = targetStats.isTransport;
         if (!isBattleship && !isTransport) return false;
       }
 
-      // 輸送船は攻撃を仕掛けられない
       if (myStats.isTransport) {
         return false;
       }
@@ -556,6 +605,14 @@
       const boardEl = document.getElementById("board");
       const rect = boardEl.children[r * BOARD_SIZE + c].getBoundingClientRect();
       const containerRect = document.getElementById("board-container").getBoundingClientRect();
+
+      const rawUnit = board[r][c];
+      const splitBtn = document.getElementById("btn-split-cmd");
+      if (rawUnit && rawUnit.units && rawUnit.units.length > 1) {
+        splitBtn.style.display = "block";
+      } else {
+        splitBtn.style.display = "none";
+      }
 
       menu.style.left = `${rect.left - containerRect.left + 48}px`;
       menu.style.top = `${rect.top - containerRect.top}px`;
@@ -574,9 +631,62 @@
 
     function cancelActionMode() {
       selectedBoardPos = null;
+      selectedSubUnits = null;
       actionMode = null;
       hideActionMenu();
       render();
+    }
+
+    /* === 分割モーダル処理 === */
+    function openSplitModal() {
+      if (!selectedBoardPos) return;
+      const { r, c } = selectedBoardPos;
+      const rawUnit = board[r][c];
+      if (!rawUnit || !rawUnit.units || rawUnit.units.length <= 1) return;
+
+      const listEl = document.getElementById("split-list");
+      listEl.innerHTML = "";
+
+      rawUnit.units.forEach((u, idx) => {
+        const item = document.createElement("label");
+        item.className = "split-item";
+        item.innerHTML = `<input type="checkbox" value="${idx}" checked> ${u.name} (HP:${u.hp})`;
+        listEl.appendChild(item);
+      });
+
+      hideActionMenu();
+      document.getElementById("split-modal").style.display = "flex";
+    }
+
+    function closeSplitModal() {
+      document.getElementById("split-modal").style.display = "none";
+      cancelActionMode();
+    }
+
+    function confirmSplit(mode) {
+      const checkboxes = document.querySelectorAll("#split-list input[type='checkbox']");
+      const selectedIndices = [];
+      checkboxes.forEach(cb => {
+        if (cb.checked) selectedIndices.push(parseInt(cb.value));
+      });
+
+      const { r, c } = selectedBoardPos;
+      const rawUnit = board[r][c];
+
+      if (selectedIndices.length === 0) {
+        alert("少なくとも1つのユニットを選択してください");
+        return;
+      }
+
+      if (selectedIndices.length === rawUnit.units.length) {
+        // 全選択の場合は通常アクションと同じ
+        selectedSubUnits = null;
+      } else {
+        selectedSubUnits = selectedIndices.map(i => rawUnit.units[i]);
+      }
+
+      document.getElementById("split-modal").style.display = "none";
+      selectActionMode(mode);
     }
 
     function render() {
@@ -680,6 +790,7 @@
           } else {
             selectedHandIndex = index;
             selectedBoardPos = null;
+            selectedSubUnits = null;
             actionMode = null;
             hideActionMenu();
           }
@@ -699,6 +810,7 @@
         const isMyLand = isOwnedLandTile(r, c, currentTurn);
         const isMyCoast = isCoastOfOwnedLand(r, c, currentTurn);
 
+        // 厳格なスポーン判定
         if (card.type === "land" || card.type === "air") {
           if (!isMyLand) {
             alert("【配置不可】陸上・航空ユニットは自軍が占領している陸地にしか出撃できません。");
@@ -706,7 +818,7 @@
           }
         } else if (card.type === "sea") {
           if (!isMyCoast) {
-            alert("【配置不可】艦艇ユニットは自軍が占領している陸地に接した沿岸（海）にしか出撃できません。");
+            alert("【配置不可】駆逐艦・艦艇ユニットは自軍が占領している陸地に接した沿岸（海）にしか出撃できません。");
             return;
           }
         }
@@ -747,19 +859,27 @@
           const myRawUnit = board[sr][sc];
           const targetRawUnit = board[r][c];
 
-          if (targetRawUnit && targetRawUnit.owner === currentTurn) {
-            const myUnits = myRawUnit.units || [myRawUnit];
-            const targetUnits = targetRawUnit.units || [targetRawUnit];
-            targetRawUnit.units = [...targetUnits, ...myUnits];
-            board[sr][sc] = null;
+          // 移動対象ユニットの切り出し（分割移動か全体移動か）
+          let movingUnits = selectedSubUnits ? selectedSubUnits : (myRawUnit.units || [myRawUnit]);
+
+          // 元のマスに残るユニットの処理
+          if (selectedSubUnits) {
+            myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u));
           } else {
-            board[r][c] = myRawUnit;
             board[sr][sc] = null;
+          }
+
+          if (targetRawUnit && targetRawUnit.owner === currentTurn) {
+            const targetUnits = targetRawUnit.units || [targetRawUnit];
+            targetRawUnit.units = [...targetUnits, ...movingUnits];
+          } else {
+            board[r][c] = { owner: currentTurn, units: movingUnits };
             if (r <= 2 || r >= 10 || isIsland(r, c)) {
               landOwners[r][c] = currentTurn;
             }
           }
           selectedBoardPos = null;
+          selectedSubUnits = null;
           actionMode = null;
           finishTurn();
         } else {
@@ -773,7 +893,12 @@
         const { r: sr, c: sc } = selectedBoardPos;
         if (isValidAttackTarget(sr, sc, r, c)) {
           const myRawUnit = board[sr][sc];
-          const myStats = getUnitStats(myRawUnit, sr, sc);
+          const movingUnits = selectedSubUnits ? selectedSubUnits : (myRawUnit.units || [myRawUnit]);
+          
+          // 仮想の攻撃部隊データ
+          const myAttackerData = { owner: currentTurn, units: movingUnits };
+          const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
+          
           const targetRawUnit = board[r][c];
           const targetStats = getUnitStats(targetRawUnit, r, c);
 
@@ -782,7 +907,6 @@
           let counterAtk = 0;
           let isCountered = false;
 
-          // 【修正箇所】反撃判定（潜水艦、または攻撃を受けた側が「輸送船」の場合は反撃不能）
           if (!myStats.isSub && !targetStats.isTransport) {
             isCountered = Math.random() < 0.70;
             if (isCountered) {
@@ -799,36 +923,49 @@
 
           alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！${counterMsg}`);
 
-          applyDamage(myRawUnit, counterAtk, sr, sc);
+          // ダメージ適用
+          applyDamageToUnits(movingUnits, counterAtk);
           applyDamage(targetRawUnit, dealAtk, r, c);
 
-          const targetDead = isDead(targetRawUnit, r, c);
-          const myDead = isDead(myRawUnit, sr, sc);
+          // 攻撃側で全滅したユニットの除外
+          const aliveMovingUnits = movingUnits.filter(u => u.hp > 0);
 
-          if (targetDead && myDead) {
-            alert("相打ちとなり、両軍ともに全滅しました！");
-            board[r][c] = null;
-            board[sr][sc] = null;
-          } else if (targetDead) {
+          if (selectedSubUnits) {
+            myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u)).concat(aliveMovingUnits);
+            if (myRawUnit.units.length === 0) board[sr][sc] = null;
+          } else {
+            myRawUnit.units = aliveMovingUnits;
+            if (myRawUnit.units.length === 0) board[sr][sc] = null;
+          }
+
+          const targetDead = isDead(targetRawUnit, r, c);
+
+          if (targetDead) {
             alert(`敵部隊を撃破しました！`);
             if (targetRawUnit.type === "hq") {
               const winner = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
               alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
               gameOver = true;
             }
-            if (myStats.type !== "sea") {
-              board[r][c] = myRawUnit;
-              board[sr][sc] = null;
+
+            // 陸・空で生存ユニットがいれば進撃
+            if (myStats.type !== "sea" && aliveMovingUnits.length > 0) {
+              // 分割元からの分離処理
+              if (selectedSubUnits) {
+                myRawUnit.units = myRawUnit.units.filter(u => !aliveMovingUnits.includes(u));
+                if (myRawUnit.units.length === 0) board[sr][sc] = null;
+              } else {
+                board[sr][sc] = null;
+              }
+              board[r][c] = { owner: currentTurn, units: aliveMovingUnits };
               if (r <= 2 || r >= 10 || isIsland(r, c)) landOwners[r][c] = currentTurn;
             } else {
               board[r][c] = null;
             }
-          } else if (myDead) {
-            alert("自軍部隊が返り討ちに遭い壊滅しました...");
-            board[sr][sc] = null;
           }
 
           selectedBoardPos = null;
+          selectedSubUnits = null;
           actionMode = null;
           if (!gameOver) finishTurn();
           else render();
@@ -850,9 +987,23 @@
         } else {
           selectedBoardPos = { r, c };
           selectedHandIndex = null;
+          selectedSubUnits = null;
           actionMode = null;
           showActionMenu(r, c);
           render();
+        }
+      }
+    }
+
+    function applyDamageToUnits(units, dmg) {
+      let remainingDmg = dmg;
+      for (let i = 0; i < units.length; i++) {
+        if (units[i].hp > remainingDmg) {
+          units[i].hp -= remainingDmg;
+          break;
+        } else {
+          remainingDmg -= units[i].hp;
+          units[i].hp = 0;
         }
       }
     }
@@ -873,19 +1024,8 @@
         return;
       }
 
-      let remainingDmg = dmg;
-      let units = rawUnit.units || [rawUnit];
-      
-      for (let i = 0; i < units.length; i++) {
-        if (units[i].hp > remainingDmg) {
-          units[i].hp -= remainingDmg;
-          break;
-        } else {
-          remainingDmg -= units[i].hp;
-          units[i].hp = 0;
-        }
-      }
-      rawUnit.units = units.filter(u => u.hp > 0);
+      applyDamageToUnits(rawUnit.units || [rawUnit], dmg);
+      rawUnit.units = (rawUnit.units || [rawUnit]).filter(u => u.hp > 0);
     }
 
     function isDead(rawUnit, r, c) {
@@ -914,6 +1054,7 @@
         currentTurn = currentTurn === "axis" ? "allies" : "axis";
         selectedHandIndex = null;
         selectedBoardPos = null;
+        selectedSubUnits = null;
         actionMode = null;
         isProcessingTurn = false;
         document.getElementById("wait-overlay").style.display = "none";
