@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 2.3</title>
+  <title>大東亜戦術ボードゲーム Ver 2.4</title>
   <style>
     body {
       font-family: sans-serif;
@@ -218,7 +218,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.3)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.4)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -226,9 +226,9 @@
       <div id="game-info">
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
-          ・<b>スポーン条件厳格化</b><br>
-           - 陸/空: 占領している陸地のみ<br>
-           - 海: 占領している陸地の沿岸のみ<br>
+          ・<b>潜水艦ターゲット修正</b><br>
+           - 潜水艦は「戦艦」「輸送船」を攻撃可<br>
+           - 輸送船からの反撃不可<br>
           ・黄枠: 移動/合体<br>
           ・赤枠: 攻撃ターゲット<br>
           ・島は飛行機のみ通過可<br>
@@ -350,12 +350,10 @@
       return ISLANDS.some(is => is.r === r && is.c === c);
     }
 
-    // 指定マス(r,c)が、自軍(owner)の占領している「陸地マス」かどうか判定
     function isOwnedLandTile(r, c, owner) {
       return landOwners[r][c] === owner;
     }
 
-    // 指定の海マス(r,c)が、自軍(owner)が占領している「陸地マス」に1マスでも接しているか判定
     function isCoastOfOwnedLand(r, c, owner) {
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
@@ -535,9 +533,19 @@
 
       if (!isVisible(tr, tc, currentTurn)) return false;
 
+      // 【修正箇所】潜水艦の攻撃対象判定
       if (myStats.isSub) {
         const targetStats = getUnitStats(targetRawUnit, tr, tc);
-        if (!targetStats || targetStats.name.indexOf("戦艦") === -1) return false;
+        if (!targetStats) return false;
+        // 戦艦、または輸送船（海上の陸軍）であれば攻撃対象として許可
+        const isBattleship = targetStats.name.indexOf("戦艦") !== -1;
+        const isTransport = targetStats.isTransport;
+        if (!isBattleship && !isTransport) return false;
+      }
+
+      // 輸送船は攻撃を仕掛けられない
+      if (myStats.isTransport) {
+        return false;
       }
 
       return true;
@@ -684,15 +692,13 @@
     function handleCellClick(r, c) {
       if (gameOver || isProcessingTurn) return;
 
-      // 【1. 手札からの配置 (厳格化されたスポーンルール)】
+      // 【1. 手札からの配置】
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
 
-        // 土地（自軍の占領下にあるか）および 沿岸（自軍の占領地に接しているか）の確認
         const isMyLand = isOwnedLandTile(r, c, currentTurn);
         const isMyCoast = isCoastOfOwnedLand(r, c, currentTurn);
 
-        // --- 配置条件のチェック ---
         if (card.type === "land" || card.type === "air") {
           if (!isMyLand) {
             alert("【配置不可】陸上・航空ユニットは自軍が占領している陸地にしか出撃できません。");
@@ -705,7 +711,6 @@
           }
         }
 
-        // 既存ユニットが存在する場合の合体・スポーンチェック
         if (board[r][c] !== null) {
           const target = board[r][c];
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
@@ -728,7 +733,6 @@
           return;
         }
 
-        // 空きマスへの新規配置
         board[r][c] = { ...card, owner: currentTurn, units: [{ ...card }] };
         hands[currentTurn].splice(selectedHandIndex, 1);
         selectedHandIndex = null;
@@ -778,7 +782,8 @@
           let counterAtk = 0;
           let isCountered = false;
 
-          if (!myStats.isSub) {
+          // 【修正箇所】反撃判定（潜水艦、または攻撃を受けた側が「輸送船」の場合は反撃不能）
+          if (!myStats.isSub && !targetStats.isTransport) {
             isCountered = Math.random() < 0.70;
             if (isCountered) {
               counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
@@ -788,7 +793,9 @@
           let bonusMsg = dealAtk > myStats.currentAtk ? ` (特攻ボーナス!)` : "";
           let counterMsg = myStats.isSub 
             ? `\n(潜水艦からの攻撃のため、敵は反撃できません！)`
-            : (isCountered ? `\n(敵が反撃！ ${counterAtk} ダメージを受けました)` : `\n(敵の反撃は発生しませんでした！)`);
+            : (targetStats.isTransport 
+                ? `\n(敵は輸送船のため、反撃できません！)`
+                : (isCountered ? `\n(敵が反撃！ ${counterAtk} ダメージを受けました)` : `\n(敵の反撃は発生しませんでした！)`));
 
           alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！${counterMsg}`);
 
