@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 2.6</title>
+  <title>大東亜戦術ボードゲーム Ver 3.1</title>
   <style>
     body {
       font-family: sans-serif;
@@ -113,6 +113,7 @@
     .unit.axis { background-color: #dc3545; }
     .unit.allies { background-color: #0d6efd; }
     .unit.hq { border: 2px solid #ffd700; }
+    .unit.nuke { border: 2px solid #ff0055; background-color: #8b0000; }
 
     .stack-badge {
       position: absolute;
@@ -252,7 +253,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 2.6)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.1)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -260,12 +261,9 @@
       <div id="game-info">
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
-          ・<b>変更点:</b><br>
-           - 中央孤島が3×3に拡大<br>
-           - 本国領土のみカード配置可能<br>
-           - 射程外からの艦砲射撃は反撃無効<br>
-           - 潜水艦/輸送船の視界1<br>
-           - 重戦車HP: 65
+          ・<b>調整点:</b><br>
+           - 核は射程4マスの標的単体攻撃に変更<br>
+           - 核の出現率をレア化（約2%）
         </p>
       </div>
     </div>
@@ -304,15 +302,17 @@
 
   <script>
     const CARD_TYPES = [
-      { name: "歩兵",       type: "land", hp: 20, maxHp: 20, atk: 10, vision: 1 },
-      { name: "軽戦車",     type: "land", hp: 30, maxHp: 30, atk: 15, vision: 1 },
-      { name: "中戦車",     type: "land", hp: 45, maxHp: 45, atk: 25, vision: 1 },
-      { name: "重戦車",     type: "land", hp: 65, maxHp: 65, atk: 40, vision: 1 },
-      { name: "戦術爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2 },
-      { name: "戦闘爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2 },
-      { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2 },
-      { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true },
-      { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true }
+      { name: "歩兵",       type: "land", hp: 20, maxHp: 20, atk: 10, vision: 1, weight: 10 },
+      { name: "軽戦車",     type: "land", hp: 30, maxHp: 30, atk: 15, vision: 1, weight: 10 },
+      { name: "中戦車",     type: "land", hp: 45, maxHp: 45, atk: 25, vision: 1, weight: 10 },
+      { name: "重戦車",     type: "land", hp: 65, maxHp: 65, atk: 40, vision: 1, weight: 8 },
+      { name: "戦術爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2, forwardOnly: true, weight: 10 },
+      { name: "戦闘爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2, forwardOnly: true, weight: 10 },
+      { name: "海軍爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 10, vision: 2, forwardOnly: true, antiNaval: true, weight: 10 },
+      { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
+      { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
+      { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
+      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 } // レア枠（約2%）
     ];
 
     const BOARD_SIZE = 13;
@@ -324,20 +324,12 @@
     let selectedHandIndex = null;
     let selectedBoardPos = null;
     let actionMode = null; // 'move' or 'attack'
-    let selectedSubUnits = null; // 分割時に一時分離されたユニットリスト
+    let selectedSubUnits = null;
     let gameOver = false;
     let isProcessingTurn = false;
 
-    // 3x3の孤島判定（5〜7行, 5〜7列）
     function isIsland(r, c) {
       return (r >= 5 && r <= 7 && c >= 5 && c <= 7);
-    }
-
-    // 本国（自国初期領土）判定
-    function isHomeTerritory(r, c, owner) {
-      if (owner === "allies") return r <= 2;
-      if (owner === "axis") return r >= 10;
-      return false;
     }
 
     function initGame() {
@@ -375,9 +367,17 @@
       }
     }
 
+    // 重み付き確率ドロー関数（核のレア化に対応）
     function getRandomCard() {
-      const rand = Math.floor(Math.random() * CARD_TYPES.length);
-      return { ...CARD_TYPES[rand] };
+      const totalWeight = CARD_TYPES.reduce((sum, card) => sum + card.weight, 0);
+      let rand = Math.random() * totalWeight;
+      for (const card of CARD_TYPES) {
+        if (rand < card.weight) {
+          return { ...card };
+        }
+        rand -= card.weight;
+      }
+      return { ...CARD_TYPES[0] };
     }
 
     function isVisible(r, c, viewerOwner) {
@@ -395,7 +395,7 @@
 
             if (dist <= visionRange) {
               if (isSubmarine) {
-                if (stats.hasDestroyer) return true;
+                if (stats.hasDestroyer || stats.hasAntiNavalAir) return true;
               } else {
                 return true;
               }
@@ -406,8 +406,13 @@
       return false;
     }
 
-    // 指定マスが本国沿岸（海）であるか判定
-    function isCoastOfHomeLand(r, c, owner) {
+    function isMyLandTerritory(r, c, owner) {
+      if (landOwners[r][c] === owner) return true;
+      if (isIsland(r, c) && landOwners[r][c] === owner) return true;
+      return false;
+    }
+
+    function isCoastOfMyLand(r, c, owner) {
       if (landOwners[r][c] !== null || isIsland(r, c)) return false;
 
       for (let dr = -1; dr <= 1; dr++) {
@@ -416,7 +421,7 @@
           const nr = r + dr;
           const nc = c + dc;
           if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
-            if (isHomeTerritory(nr, nc, owner)) {
+            if (landOwners[nr][nc] === owner) {
               return true;
             }
           }
@@ -444,8 +449,9 @@
       let mainType = units[0].type;
       let isSub = units.some(u => u.sub);
       let hasDestroyer = units.some(u => u.destroyer);
+      let hasAntiNavalAir = units.some(u => u.antiNaval);
+      let isNuke = units.some(u => u.isNuke);
 
-      // 輸送船判定（陸上ユニットが海または未占領地にいる場合）
       if (mainType === "land" && (r >= 3 && r <= 9) && !isIsland(r, c)) {
         if (cellUnit.transportHp === undefined) {
           cellUnit.transportHp = 30;
@@ -453,7 +459,7 @@
 
         let curHp = cellUnit.transportHp;
         let hpRatio = curHp / 30;
-        let curAtk = Math.max(1, Math.round(5 * hpRatio));
+        let curAtk = Math.max(1, Math.round((isNuke ? 200 : 5) * hpRatio));
 
         return {
           name: units.length > 1 ? `輸送船等(${units.length})` : "輸送船",
@@ -465,15 +471,16 @@
           currentAtk: curAtk,
           owner: cellUnit.owner,
           units: units,
-          vision: 1, // 輸送船の視界は1マス
-          maxRange: 1
+          vision: 1,
+          maxRange: 1,
+          isNuke: isNuke
         };
       }
 
       let totalHp = 0;
       let totalMaxHp = 0;
       let totalBaseAtk = 0;
-      let maxVision = 1;
+      let maxVision = 0;
 
       units.forEach(u => {
         totalHp += u.hp;
@@ -491,6 +498,7 @@
       }
 
       let maxRange = (mainType === "sea" || mainType === "air") ? 2 : 1;
+      if (isNuke) maxRange = 4;
 
       return {
         name: name,
@@ -504,7 +512,9 @@
         vision: maxVision,
         isSub: isSub,
         hasDestroyer: hasDestroyer,
-        maxRange: maxRange
+        hasAntiNavalAir: hasAntiNavalAir,
+        maxRange: maxRange,
+        isNuke: isNuke
       };
     }
 
@@ -520,6 +530,8 @@
           if (defUnits.some(d => d.name === "歩兵")) bonus += 5;
         } else if (aUnit.name === "戦闘爆撃機") {
           if (defUnits.some(d => d.name.includes("戦車"))) bonus += 5;
+        } else if (aUnit.antiNaval) {
+          if (defender && (defender.type === "sea" || defender.isTransport)) bonus += 10;
         } else if (aUnit.destroyer) {
           if (defender && defender.isSub) bonus += 10;
         }
@@ -551,7 +563,7 @@
 
       const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
       const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
-      let maxDist = myStats.maxRange;
+      let maxDist = (myStats.type === "sea" || myStats.type === "air") ? 2 : 1;
 
       if (dist === 0 || dist > maxDist) return false;
 
@@ -568,6 +580,11 @@
 
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
+
+        if (myUnits.some(u => u.sub) || targetUnits.some(u => u.sub)) {
+          return false;
+        }
+
         if (myUnits.length + targetUnits.length > 6) return false;
 
         return true;
@@ -583,10 +600,17 @@
       if (!myRawUnit || myRawUnit.type === "hq") return false;
 
       const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
-      const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
-      let maxDist = myStats.maxRange;
+      const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
 
-      if (dist === 0 || dist > maxDist) return false;
+      if (myUnits.some(u => u.forwardOnly)) {
+        const dr = tr - sr;
+        const dc = tc - sc;
+        const isForward = (currentTurn === "axis" && dr < 0 && dc === 0) || (currentTurn === "allies" && dr > 0 && dc === 0);
+        if (!isForward || Math.abs(dr) > 2) return false;
+      } else {
+        const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
+        if (dist === 0 || dist > myStats.maxRange) return false;
+      }
 
       const targetRawUnit = board[tr][tc];
       if (!targetRawUnit || targetRawUnit.owner === currentTurn) return false;
@@ -601,7 +625,7 @@
         if (!isBattleship && !isTransport) return false;
       }
 
-      if (myStats.isTransport) {
+      if (myStats.isTransport && !myStats.isNuke) {
         return false;
       }
 
@@ -645,7 +669,6 @@
       render();
     }
 
-    /* === 分割モーダル処理 === */
     function openSplitModal() {
       if (!selectedBoardPos) return;
       const { r, c } = selectedBoardPos;
@@ -750,6 +773,7 @@
                 const unitEl = document.createElement("div");
                 unitEl.classList.add("unit", displayUnit.owner);
                 if (displayUnit.type === "hq") unitEl.classList.add("hq");
+                if (displayUnit.isNuke) unitEl.classList.add("nuke");
 
                 const hpPercent = Math.max(0, Math.min(100, (displayUnit.hp / displayUnit.maxHp) * 100));
 
@@ -814,18 +838,17 @@
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
 
-        const isHome = isHomeTerritory(r, c, currentTurn);
-        const isHomeCoast = isCoastOfHomeLand(r, c, currentTurn);
+        const isMyLand = isMyLandTerritory(r, c, currentTurn);
+        const isMyCoast = isCoastOfMyLand(r, c, currentTurn);
 
-        // 厳格なスポーン判定（本国領土のみ）
         if (card.type === "land" || card.type === "air") {
-          if (!isHome) {
-            alert("【配置不可】ユニットは自国の初期領土（本国エリア）にしか出撃できません。");
+          if (!isMyLand) {
+            alert("【配置不可】自軍が占領している陸地・島にしか配置できません。");
             return;
           }
         } else if (card.type === "sea") {
-          if (!isHomeCoast) {
-            alert("【配置不可】駆逐艦・艦艇は本国エリアに面した沿岸（海）にしか出撃できません。");
+          if (!isMyCoast) {
+            alert("【配置不可】自軍占領地に隣接した沿岸（海）にしか配置できません。");
             return;
           }
         }
@@ -842,6 +865,12 @@
           }
 
           const targetUnits = target.units || [target];
+          
+          if (card.sub || targetUnits.some(u => u.sub)) {
+            alert("【制限】潜水艦は他のユニットと合体させることができません。");
+            return;
+          }
+
           if (targetUnits.length >= 6) { alert("これ以上ユニットを組み合わせられません（最大6体）"); return; }
 
           targetUnits.push({ ...card });
@@ -902,22 +931,52 @@
           
           const myAttackerData = { owner: currentTurn, units: movingUnits };
           const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
-          
           const targetRawUnit = board[r][c];
-          const targetStats = getUnitStats(targetRawUnit, r, c);
 
+          // === 【核攻撃の特殊処理（単体ピンポイント攻撃）】 ===
+          if (myStats.isNuke) {
+            alert(`💥【核ミサイル発射！】\n座標(${r}, ${c})の敵ターゲットにピンポイント核攻撃（200ダメージ）を実行！`);
+
+            applyDamage(targetRawUnit, 200, r, c);
+
+            if (isDead(targetRawUnit, r, c)) {
+              alert(`敵ターゲットを完全に消滅させました！`);
+              if (targetRawUnit.type === "hq") {
+                const victor = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
+                alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
+                gameOver = true;
+              }
+              board[r][c] = null;
+            }
+
+            // 使用した核ユニット（またはスタック内から分離した核）の消滅処理
+            if (selectedSubUnits) {
+              myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u));
+              if (myRawUnit.units.length === 0) board[sr][sc] = null;
+            } else {
+              board[sr][sc] = null;
+            }
+
+            selectedBoardPos = null;
+            selectedSubUnits = null;
+            actionMode = null;
+            if (!gameOver) finishTurn();
+            else render();
+            return;
+          }
+
+          // === 【通常攻撃処理】 ===
+          const targetStats = getUnitStats(targetRawUnit, r, c);
           const dealAtk = calculateAttack(myStats, targetStats);
 
           let counterAtk = 0;
           let isCountered = false;
 
-          // 相手が攻撃側に届く射程（距離）を持っているか確認
           const dist = Math.abs(sr - r) + Math.abs(sc - c);
           const targetCanReach = dist <= targetStats.maxRange;
 
-          // 反撃発生条件: 潜水艦・輸送船でなく、かつ敵の攻撃射程内に自分がいること
           if (!myStats.isSub && !targetStats.isTransport && targetCanReach) {
-            isCountered = Math.random() < 0.70; // 70%の確率で反撃発生
+            isCountered = Math.random() < 0.70;
             if (isCountered) {
               counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
             }
@@ -940,7 +999,6 @@
 
           alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！${counterMsg}`);
 
-          // ダメージ適用
           applyDamageToUnits(movingUnits, counterAtk);
           applyDamage(targetRawUnit, dealAtk, r, c);
 
@@ -964,7 +1022,6 @@
               gameOver = true;
             }
 
-            // 陸・空で生存ユニットがいれば進撃
             if (myStats.type !== "sea" && aliveMovingUnits.length > 0) {
               if (selectedSubUnits) {
                 myRawUnit.units = myRawUnit.units.filter(u => !aliveMovingUnits.includes(u));
