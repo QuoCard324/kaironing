@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 3.1</title>
+  <title>大東亜戦術ボードゲーム Ver 3.2</title>
   <style>
     body {
       font-family: sans-serif;
@@ -113,7 +113,10 @@
     .unit.axis { background-color: #dc3545; }
     .unit.allies { background-color: #0d6efd; }
     .unit.hq { border: 2px solid #ffd700; }
-    .unit.nuke { border: 2px solid #ff0055; background-color: #8b0000; }
+    
+    /* 核の所属別カラー設定 */
+    .unit.nuke.axis { border: 2px solid #ff0055; background-color: #8b0000; }
+    .unit.nuke.allies { border: 2px solid #00ffff; background-color: #00008b; }
 
     .stack-badge {
       position: absolute;
@@ -149,27 +152,29 @@
       align-items: center;
     }
 
+    /* 手札エリアのサイズ・デザインをやや拡大 */
     #hand {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      width: 190px;
-      min-height: 200px;
+      gap: 8px;
+      width: 210px;
+      min-height: 230px;
       background-color: #fff;
       border: 1px solid #ccc;
-      padding: 10px;
+      padding: 12px;
       border-radius: 8px;
     }
 
     .card {
-      padding: 6px;
+      padding: 10px;
       border: 1px solid #aaa;
-      border-radius: 5px;
+      border-radius: 6px;
       background-color: #fff8dc;
       cursor: pointer;
-      font-size: 11px;
+      font-size: 12px;
       text-align: left;
       color: #333;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     .card.selected { background-color: #ffe8a1; border-color: #ffc107; border-width: 2px; }
 
@@ -253,17 +258,18 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.1)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.2)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
       <button id="reset-btn" onclick="resetGame()">🔄 試合リセット</button>
       <div id="game-info">
-        <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">軸心国 (Axis)</span></p>
+        <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">枢軸国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
           ・<b>調整点:</b><br>
-           - 核は射程4マスの標的単体攻撃に変更<br>
-           - 核の出現率をレア化（約2%）
+           - 枢軸国の核=濃赤、連合国の核=濃青<br>
+           - 核の合体制限（合体不可）<br>
+           - 海上核（輸送船）時の攻撃力を5へ修正
         </p>
       </div>
     </div>
@@ -280,7 +286,7 @@
     </div>
 
     <div id="controls">
-      <h3 style="margin:0 0 10px 0;">手札 (<span id="hand-owner">軸心国</span>) <span id="hand-count" style="font-size:11px;"></span></h3>
+      <h3 style="margin:0 0 10px 0;">手札 (<span id="hand-owner">枢軸国</span>) <span id="hand-count" style="font-size:11px;"></span></h3>
       <div id="hand"></div>
     </div>
   </div>
@@ -312,7 +318,7 @@
       { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
       { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
       { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
-      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 } // レア枠（約2%）
+      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 } // レア枠
     ];
 
     const BOARD_SIZE = 13;
@@ -367,7 +373,6 @@
       }
     }
 
-    // 重み付き確率ドロー関数（核のレア化に対応）
     function getRandomCard() {
       const totalWeight = CARD_TYPES.reduce((sum, card) => sum + card.weight, 0);
       let rand = Math.random() * totalWeight;
@@ -452,6 +457,7 @@
       let hasAntiNavalAir = units.some(u => u.antiNaval);
       let isNuke = units.some(u => u.isNuke);
 
+      // 海上エリア（輸送船状態）の処理
       if (mainType === "land" && (r >= 3 && r <= 9) && !isIsland(r, c)) {
         if (cellUnit.transportHp === undefined) {
           cellUnit.transportHp = 30;
@@ -459,7 +465,8 @@
 
         let curHp = cellUnit.transportHp;
         let hpRatio = curHp / 30;
-        let curAtk = Math.max(1, Math.round((isNuke ? 200 : 5) * hpRatio));
+        // 修正：核も含めて輸送船の基礎攻撃力は5に統一
+        let curAtk = Math.max(1, Math.round(5 * hpRatio));
 
         return {
           name: units.length > 1 ? `輸送船等(${units.length})` : "輸送船",
@@ -581,7 +588,8 @@
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-        if (myUnits.some(u => u.sub) || targetUnits.some(u => u.sub)) {
+        // 制限：潜水艦または核が含まれる場合は他のユニットと重ねられない
+        if (myUnits.some(u => u.sub || u.isNuke) || targetUnits.some(u => u.sub || u.isNuke)) {
           return false;
         }
 
@@ -721,10 +729,10 @@
 
     function render() {
       const turnEl = document.getElementById("current-turn");
-      turnEl.innerText = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
+      turnEl.innerText = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
       turnEl.className = `status-text ${currentTurn}-text`;
 
-      document.getElementById("hand-owner").innerText = currentTurn === "axis" ? "軸心国" : "連合国";
+      document.getElementById("hand-owner").innerText = currentTurn === "axis" ? "枢軸国" : "連合国";
       document.getElementById("hand-count").innerText = `(${hands[currentTurn].length}/7枚)`;
       
       renderBoard();
@@ -865,9 +873,10 @@
           }
 
           const targetUnits = target.units || [target];
-          
-          if (card.sub || targetUnits.some(u => u.sub)) {
-            alert("【制限】潜水艦は他のユニットと合体させることができません。");
+
+          // 修正：核または潜水艦は合体不可
+          if (card.isNuke || card.sub || targetUnits.some(u => u.isNuke || u.sub)) {
+            alert("【制限】核および潜水艦は他のユニットと組み合わせる（合体させる）ことができません。");
             return;
           }
 
@@ -942,14 +951,13 @@
             if (isDead(targetRawUnit, r, c)) {
               alert(`敵ターゲットを完全に消滅させました！`);
               if (targetRawUnit.type === "hq") {
-                const victor = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
+                const victor = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
                 alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
                 gameOver = true;
               }
               board[r][c] = null;
             }
 
-            // 使用した核ユニット（またはスタック内から分離した核）の消滅処理
             if (selectedSubUnits) {
               myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u));
               if (myRawUnit.units.length === 0) board[sr][sc] = null;
@@ -1017,7 +1025,7 @@
           if (targetDead) {
             alert(`敵部隊を撃破しました！`);
             if (targetRawUnit.type === "hq") {
-              const winner = currentTurn === "axis" ? "軸心国 (Axis)" : "連合国 (Allies)";
+              const winner = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
               alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
               gameOver = true;
             }
