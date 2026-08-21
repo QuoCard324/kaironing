@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 3.5</title>
+  <title>大東亜戦術ボードゲーム Ver 3.2 (タイマー機能付き)</title>
   <style>
     body {
       font-family: sans-serif;
@@ -166,6 +166,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      gap: 10px;
     }
 
     /* 手札エリア */
@@ -179,6 +180,25 @@
       border: 1px solid #ccc;
       padding: 12px;
       border-radius: 8px;
+    }
+
+    /* タイマーパネル（手札の下） */
+    #timer-panel {
+      width: 210px;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      box-sizing: border-box;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    #timer-display {
+      font-size: 26px;
+      font-weight: bold;
+      color: #dc3545;
+      margin-top: 5px;
+      font-family: monospace;
     }
 
     .card {
@@ -274,7 +294,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.5)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.2)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -304,8 +324,22 @@
     </div>
 
     <div id="controls">
-      <h3 style="margin:0 0 10px 0;">手札 (<span id="hand-owner">枢軸国</span>) <span id="hand-count" style="font-size:11px;"></span></h3>
+      <h3 style="margin:0;">手札 (<span id="hand-owner">枢軸国</span>) <span id="hand-count" style="font-size:11px;"></span></h3>
       <div id="hand"></div>
+      
+      <!-- タイマーパネル（手札の下） -->
+      <div id="timer-panel">
+        <div style="font-size: 12px; font-weight: bold;">⏱ 制限時間設定</div>
+        <select id="timer-select" onchange="changeTimeLimit()" style="margin-top: 4px; font-size: 12px; padding: 2px 5px;">
+          <option value="5">1手 5秒</option>
+          <option value="10" selected>1手 10秒</option>
+          <option value="15">1手 15秒</option>
+          <option value="20">1手 20秒</option>
+          <option value="25">1手 25秒</option>
+          <option value="30">1手 30秒</option>
+        </select>
+        <div id="timer-display">10</div>
+      </div>
     </div>
   </div>
 
@@ -352,11 +386,62 @@
     let gameOver = false;
     let isProcessingTurn = false;
 
+    // タイマー用変数
+    let timeLimit = 10;
+    let timeLeft = 10;
+    let timerId = null;
+
+    function startTimer() {
+      stopTimer();
+      timeLeft = timeLimit;
+      updateTimerDisplay();
+      
+      timerId = setInterval(() => {
+        if (gameOver || isProcessingTurn) return;
+        timeLeft--;
+        updateTimerDisplay();
+
+        if (timeLeft <= 0) {
+          stopTimer();
+          alert("⏱ 時間切れ！ターンが強制移動します。");
+          finishTurn();
+        }
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+    }
+
+    function updateTimerDisplay() {
+      const display = document.getElementById("timer-display");
+      if (display) {
+        display.innerText = timeLeft;
+        if (timeLeft <= 3) {
+          display.style.color = "#ff0000";
+        } else {
+          display.style.color = "#dc3545";
+        }
+      }
+    }
+
+    function changeTimeLimit() {
+      const select = document.getElementById("timer-select");
+      timeLimit = parseInt(select.value, 10);
+      if (!isProcessingTurn && !gameOver) {
+        startTimer();
+      }
+    }
+
     function isIsland(r, c) {
       return (r >= 5 && r <= 7 && c >= 5 && c <= 7);
     }
 
     function initGame() {
+      stopTimer();
       board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
       landOwners = Array(BOARD_SIZE).fill(null).map((_, r) => {
         if (r <= 2) return Array(BOARD_SIZE).fill("allies");
@@ -383,6 +468,7 @@
       }
       hideActionMenu();
       render();
+      startTimer();
     }
 
     function resetGame() {
@@ -971,6 +1057,7 @@
                 const victor = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
                 alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
                 gameOver = true;
+                stopTimer();
               }
               board[r][c] = null;
             }
@@ -1044,6 +1131,7 @@
               const winner = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
               alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
               gameOver = true;
+              stopTimer();
             }
 
             if (myStats.type !== "sea" && aliveMovingUnits.length > 0) {
@@ -1136,6 +1224,7 @@
     }
 
     function finishTurn() {
+      stopTimer();
       isProcessingTurn = true;
       hideActionMenu();
 
@@ -1154,6 +1243,7 @@
         isProcessingTurn = false;
         document.getElementById("wait-overlay").style.display = "none";
         render();
+        if (!gameOver) startTimer();
       }, 1000);
     }
 
