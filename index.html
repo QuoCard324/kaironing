@@ -11,6 +11,7 @@
       text-align: center;
       margin: 0;
       padding: 10px;
+      overflow-x: hidden;
     }
 
     #main-layout {
@@ -19,6 +20,21 @@
       align-items: flex-start;
       gap: 20px;
       margin-top: 10px;
+      transition: transform 0.8s ease-in-out;
+    }
+
+    /* 連合国（Allies）ターンの時に全体を180度回転 */
+    #main-layout.rotated {
+      transform: rotate(180deg);
+    }
+
+    /* 全体が回転しても文字やユニットの上下が逆さまにならないよう個別に反転 */
+    #main-layout.rotated .unit,
+    #main-layout.rotated .stack-badge,
+    #main-layout.rotated .card,
+    #main-layout.rotated #left-panel,
+    #main-layout.rotated #action-menu button {
+      transform: rotate(180deg);
     }
 
     #left-panel {
@@ -27,6 +43,7 @@
       align-items: center;
       gap: 15px;
       width: 180px;
+      transition: transform 0.8s ease-in-out;
     }
 
     #reset-btn {
@@ -109,6 +126,7 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      transition: transform 0.8s ease-in-out;
     }
     .unit.axis { background-color: #dc3545; }
     .unit.allies { background-color: #0d6efd; }
@@ -130,6 +148,7 @@
       font-size: 7px;
       font-weight: bold;
       line-height: 11px;
+      transition: transform 0.8s ease-in-out;
     }
 
     .hp-bar-bg {
@@ -152,7 +171,7 @@
       align-items: center;
     }
 
-    /* 手札エリアのサイズ・デザインをやや拡大 */
+    /* 手札エリアのサイズ・デザイン */
     #hand {
       display: flex;
       flex-direction: column;
@@ -175,6 +194,7 @@
       text-align: left;
       color: #333;
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      transition: transform 0.8s ease-in-out;
     }
     .card.selected { background-color: #ffe8a1; border-color: #ffc107; border-width: 2px; }
 
@@ -202,6 +222,7 @@
       cursor: pointer;
       border-radius: 4px;
       border: 1px solid #888;
+      transition: transform 0.8s ease-in-out;
     }
     #action-menu .btn-move { background-color: #ffea00; }
     #action-menu .btn-atk { background-color: #ff6b6b; color: white; }
@@ -270,7 +291,8 @@
            - 枢軸国の核=濃赤、連合国の核=濃青<br>
            - 核の合体制限（合体不可）<br>
            - 海上核（輸送船）時の攻撃力を5へ修正<br>
-           - 海軍ユニットの陸上・島への移動禁止
+           - 海軍ユニットの陸上・島への移動禁止<br>
+           - ターン交替時の180度画面回転
         </p>
       </div>
     </div>
@@ -466,7 +488,6 @@
 
         let curHp = cellUnit.transportHp;
         let hpRatio = curHp / 30;
-        // 修正：核も含めて輸送船の基礎攻撃力は5に統一
         let curAtk = Math.max(1, Math.round(5 * hpRatio));
 
         return {
@@ -579,7 +600,7 @@
 
       const targetRawUnit = board[tr][tc];
 
-      // --- 海軍ユニットの陸上進入禁止判定 ---
+      // 海軍ユニットの陸上進入禁止判定
       const isLandOrIsland = (tr <= 2) || (tr >= 10) || isIsland(tr, tc);
       if (myStats.type === "sea" && isLandOrIsland) return false;
 
@@ -590,7 +611,6 @@
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-        // 制限：潜水艦または核が含まれる場合は他のユニットと重ねられない
         if (myUnits.some(u => u.sub || u.isNuke) || targetUnits.some(u => u.sub || u.isNuke)) {
           return false;
         }
@@ -730,6 +750,13 @@
     }
 
     function render() {
+      const mainLayout = document.getElementById("main-layout");
+      if (currentTurn === "allies") {
+        mainLayout.classList.add("rotated");
+      } else {
+        mainLayout.classList.remove("rotated");
+      }
+
       const turnEl = document.getElementById("current-turn");
       turnEl.innerText = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
       turnEl.className = `status-text ${currentTurn}-text`;
@@ -876,7 +903,6 @@
 
           const targetUnits = target.units || [target];
 
-          // 修正：核または潜水艦は合体不可
           if (card.isNuke || card.sub || targetUnits.some(u => u.isNuke || u.sub)) {
             alert("【制限】核および潜水艦は他のユニットと組み合わせる（合体させる）ことができません。");
             return;
