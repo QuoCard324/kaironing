@@ -20,21 +20,6 @@
       align-items: flex-start;
       gap: 20px;
       margin-top: 10px;
-      transition: transform 0.8s ease-in-out;
-    }
-
-    /* 連合国（Allies）ターンの時に全体を180度回転 */
-    #main-layout.rotated {
-      transform: rotate(180deg);
-    }
-
-    /* 全体が回転しても文字やユニットの上下が逆さまにならないよう個別に反転 */
-    #main-layout.rotated .unit,
-    #main-layout.rotated .stack-badge,
-    #main-layout.rotated .card,
-    #main-layout.rotated #left-panel,
-    #main-layout.rotated #action-menu button {
-      transform: rotate(180deg);
     }
 
     #left-panel {
@@ -43,7 +28,6 @@
       align-items: center;
       gap: 15px;
       width: 180px;
-      transition: transform 0.8s ease-in-out;
     }
 
     #reset-btn {
@@ -69,6 +53,7 @@
       box-sizing: border-box;
     }
 
+    /* 盤面のみ回転を設定 */
     #board {
       display: grid;
       grid-template-columns: repeat(13, 46px);
@@ -76,6 +61,18 @@
       gap: 1px;
       background-color: #888;
       border: 3px solid #555;
+      transition: transform 0.8s ease-in-out;
+    }
+
+    /* 連合国（Allies）ターンの時に盤面のみ180度回転 */
+    #board.rotated {
+      transform: rotate(180deg);
+    }
+
+    /* 盤面が回転している時、中のユニットとバッジだけ逆回転させて常に正位置に保つ */
+    #board.rotated .unit,
+    #board.rotated .stack-badge {
+      transform: rotate(180deg);
     }
 
     .cell {
@@ -171,7 +168,7 @@
       align-items: center;
     }
 
-    /* 手札エリアのサイズ・デザイン */
+    /* 手札エリア */
     #hand {
       display: flex;
       flex-direction: column;
@@ -194,7 +191,6 @@
       text-align: left;
       color: #333;
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-      transition: transform 0.8s ease-in-out;
     }
     .card.selected { background-color: #ffe8a1; border-color: #ffc107; border-width: 2px; }
 
@@ -222,7 +218,6 @@
       cursor: pointer;
       border-radius: 4px;
       border: 1px solid #888;
-      transition: transform 0.8s ease-in-out;
     }
     #action-menu .btn-move { background-color: #ffea00; }
     #action-menu .btn-atk { background-color: #ff6b6b; color: white; }
@@ -279,7 +274,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.2)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.5)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -292,7 +287,7 @@
            - 核の合体制限（合体不可）<br>
            - 海上核（輸送船）時の攻撃力を5へ修正<br>
            - 海軍ユニットの陸上・島への移動禁止<br>
-           - ターン交替時の180度画面回転
+           - ターン交替時の盤面反転
         </p>
       </div>
     </div>
@@ -341,7 +336,7 @@
       { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
       { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
       { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
-      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 } // レア枠
+      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 }
     ];
 
     const BOARD_SIZE = 13;
@@ -352,7 +347,7 @@
     let hands;
     let selectedHandIndex = null;
     let selectedBoardPos = null;
-    let actionMode = null; // 'move' or 'attack'
+    let actionMode = null;
     let selectedSubUnits = null;
     let gameOver = false;
     let isProcessingTurn = false;
@@ -480,7 +475,6 @@
       let hasAntiNavalAir = units.some(u => u.antiNaval);
       let isNuke = units.some(u => u.isNuke);
 
-      // 海上エリア（輸送船状態）の処理
       if (mainType === "land" && (r >= 3 && r <= 9) && !isIsland(r, c)) {
         if (cellUnit.transportHp === undefined) {
           cellUnit.transportHp = 30;
@@ -600,7 +594,6 @@
 
       const targetRawUnit = board[tr][tc];
 
-      // 海軍ユニットの陸上進入禁止判定
       const isLandOrIsland = (tr <= 2) || (tr >= 10) || isIsland(tr, tc);
       if (myStats.type === "sea" && isLandOrIsland) return false;
 
@@ -750,11 +743,11 @@
     }
 
     function render() {
-      const mainLayout = document.getElementById("main-layout");
+      const boardEl = document.getElementById("board");
       if (currentTurn === "allies") {
-        mainLayout.classList.add("rotated");
+        boardEl.classList.add("rotated");
       } else {
-        mainLayout.classList.remove("rotated");
+        boardEl.classList.remove("rotated");
       }
 
       const turnEl = document.getElementById("current-turn");
@@ -871,7 +864,6 @@
     function handleCellClick(r, c) {
       if (gameOver || isProcessingTurn) return;
 
-      // 【1. 手札からの配置】
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
 
@@ -925,7 +917,6 @@
         return;
       }
 
-      // 【2. 移動実行】
       if (selectedBoardPos && actionMode === "move") {
         const { r: sr, c: sc } = selectedBoardPos;
         if (isValidMoveTarget(sr, sc, r, c)) {
@@ -959,7 +950,6 @@
         return;
       }
 
-      // 【3. 攻撃実行】
       if (selectedBoardPos && actionMode === "attack") {
         const { r: sr, c: sc } = selectedBoardPos;
         if (isValidAttackTarget(sr, sc, r, c)) {
@@ -970,7 +960,6 @@
           const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
           const targetRawUnit = board[r][c];
 
-          // === 【核攻撃の特殊処理（単体ピンポイント攻撃）】 ===
           if (myStats.isNuke) {
             alert(`💥【核ミサイル発射！】\n座標(${r}, ${c})の敵ターゲットにピンポイント核攻撃（200ダメージ）を実行！`);
 
@@ -1001,7 +990,6 @@
             return;
           }
 
-          // === 【通常攻撃処理】 ===
           const targetStats = getUnitStats(targetRawUnit, r, c);
           const dealAtk = calculateAttack(myStats, targetStats);
 
@@ -1083,7 +1071,6 @@
         return;
       }
 
-      // 【4. ユニット選択】
       if (board[r][c] && board[r][c].owner === currentTurn) {
         if (board[r][c].type === "hq") {
           alert("司令部は移動・攻撃ができません");
