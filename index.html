@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 3.3</title>
+  <title>大東亜戦術ボードゲーム Ver 3.2</title>
   <style>
     body {
       font-family: sans-serif;
@@ -152,7 +152,7 @@
       align-items: center;
     }
 
-    /* 手札エリア */
+    /* 手札エリアのサイズ・デザインをやや拡大 */
     #hand {
       display: flex;
       flex-direction: column;
@@ -258,7 +258,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.3)</h1>
+  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.2)</h1>
 
   <div id="main-layout">
     <div id="left-panel">
@@ -267,8 +267,10 @@
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">枢軸国 (Axis)</span></p>
         <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
           ・<b>調整点:</b><br>
-           - 潜水艦どうしの合体が可能に修正<br>
-           - 核は完全単体（他・核同士とも合体不可）
+           - 枢軸国の核=濃赤、連合国の核=濃青<br>
+           - 核の合体制限（合体不可）<br>
+           - 海上核（輸送船）時の攻撃力を5へ修正<br>
+           - 海軍ユニットの陸上・島への移動禁止
         </p>
       </div>
     </div>
@@ -317,7 +319,7 @@
       { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
       { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
       { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
-      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 }
+      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 } // レア枠
     ];
 
     const BOARD_SIZE = 13;
@@ -328,7 +330,7 @@
     let hands;
     let selectedHandIndex = null;
     let selectedBoardPos = null;
-    let actionMode = null;
+    let actionMode = null; // 'move' or 'attack'
     let selectedSubUnits = null;
     let gameOver = false;
     let isProcessingTurn = false;
@@ -456,6 +458,7 @@
       let hasAntiNavalAir = units.some(u => u.antiNaval);
       let isNuke = units.some(u => u.isNuke);
 
+      // 海上エリア（輸送船状態）の処理
       if (mainType === "land" && (r >= 3 && r <= 9) && !isIsland(r, c)) {
         if (cellUnit.transportHp === undefined) {
           cellUnit.transportHp = 30;
@@ -463,6 +466,7 @@
 
         let curHp = cellUnit.transportHp;
         let hpRatio = curHp / 30;
+        // 修正：核も含めて輸送船の基礎攻撃力は5に統一
         let curAtk = Math.max(1, Math.round(5 * hpRatio));
 
         return {
@@ -575,8 +579,9 @@
 
       const targetRawUnit = board[tr][tc];
 
-      const isLandOrIsland = (currentTurn === "axis" && tr <= 2) || (currentTurn === "allies" && tr >= 10) || isIsland(tr, tc);
-      if (myStats.type === "sea" && isLandOrIsland && !targetRawUnit) return false;
+      // --- 海軍ユニットの陸上進入禁止判定 ---
+      const isLandOrIsland = (tr <= 2) || (tr >= 10) || isIsland(tr, tc);
+      if (myStats.type === "sea" && isLandOrIsland) return false;
 
       if (targetRawUnit && targetRawUnit.owner === currentTurn) {
         if (targetRawUnit.type === "hq") return false;
@@ -585,16 +590,8 @@
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-        // 【制限判定】
-        // 1. 核が含まれる場合は絶対合体不可
-        if (myUnits.some(u => u.isNuke) || targetUnits.some(u => u.isNuke)) {
-          return false;
-        }
-
-        // 2. 潜水艦が含まれる場合、双方が「潜水艦のみ」で構成されている場合のみ許可
-        const myAllSub = myUnits.every(u => u.sub);
-        const targetAllSub = targetUnits.every(u => u.sub);
-        if ((myUnits.some(u => u.sub) || targetUnits.some(u => u.sub)) && (!myAllSub || !targetAllSub)) {
+        // 制限：潜水艦または核が含まれる場合は他のユニットと重ねられない
+        if (myUnits.some(u => u.sub || u.isNuke) || targetUnits.some(u => u.sub || u.isNuke)) {
           return false;
         }
 
@@ -879,20 +876,10 @@
 
           const targetUnits = target.units || [target];
 
-          // 【手札からの合体制限】
-          // 1. 核は一切合体不可
-          if (card.isNuke || targetUnits.some(u => u.isNuke)) {
-            alert("【制限】核は他ユニットや核同士を含め、合体させることができません。");
+          // 修正：核または潜水艦は合体不可
+          if (card.isNuke || card.sub || targetUnits.some(u => u.isNuke || u.sub)) {
+            alert("【制限】核および潜水艦は他のユニットと組み合わせる（合体させる）ことができません。");
             return;
-          }
-
-          // 2. 潜水艦は「潜水艦同士」のみ合体可能（戦艦・駆逐艦等とはブロック）
-          if (card.sub || targetUnits.some(u => u.sub)) {
-            const isTargetOnlySub = targetUnits.every(u => u.sub);
-            if (!card.sub || !isTargetOnlySub) {
-              alert("【制限】潜水艦は潜水艦同士でしか組み合わせられません（戦艦・駆逐艦等とは合体不可）。");
-              return;
-            }
           }
 
           if (targetUnits.length >= 6) { alert("これ以上ユニットを組み合わせられません（最大6体）"); return; }
@@ -957,7 +944,7 @@
           const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
           const targetRawUnit = board[r][c];
 
-          // === 【核攻撃の特殊処理】 ===
+          // === 【核攻撃の特殊処理（単体ピンポイント攻撃）】 ===
           if (myStats.isNuke) {
             alert(`💥【核ミサイル発射！】\n座標(${r}, ${c})の敵ターゲットにピンポイント核攻撃（200ダメージ）を実行！`);
 
