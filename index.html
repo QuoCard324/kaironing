@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 5.0 (Minimax & DangerMap AI)</title>
+  <title>大東亜戦術ボードゲーム Ver 5.2 (Fix Flank & Defense AI)</title>
   <style>
     body {
       font-family: sans-serif;
@@ -310,13 +310,13 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム Ver 5.0</h1>
+  <h1>大東亜戦術ボードゲーム Ver 5.2 (Fix Flank AI)</h1>
 
   <div id="mode-modal">
     <div class="modal-content">
       <h2 style="margin-top:0;">対戦モードを選択</h2>
       <button class="mode-btn btn-pvp" onclick="startGame('pvp')">👥 対人戦 (180度回転・制限時間あり)</button>
-      <button class="mode-btn btn-ai" onclick="startGame('ai')">🧠 VS 思考エンジンAI (Minimax & 危険度マップ)</button>
+      <button class="mode-btn btn-ai" onclick="startGame('ai')">🧠 VS 思考エンジンAI (Ver 5.2 防衛強化版)</button>
     </div>
   </div>
 
@@ -409,7 +409,7 @@
     function startGame(mode) {
       gameMode = mode;
       document.getElementById("mode-modal").style.display = "none";
-      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 思考エンジンAI (Ver 5.0)";
+      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 思考エンジンAI (Ver 5.2)";
 
       const timerSelect = document.getElementById("timer-select");
       if (mode === "ai") {
@@ -1237,7 +1237,7 @@
           if (!gameOver) startTimer();
         } else if (gameMode === "ai") {
           if (currentTurn === "allies") {
-            overlay.innerText = "🧠 Minimax & 危険度マップ AI思考中...";
+            overlay.innerText = "🧠 Minimax & 防衛強化 AI思考中...";
             overlay.style.display = "flex";
             render();
             setTimeout(processAITurn, 100);
@@ -1256,7 +1256,7 @@
       }
     }
 
-    // --- Ver 5.0 AI: 危険度マップ & Minimax(Alpha-Beta) 思考エンジン ---
+    // --- Ver 5.2 AI: 脅威追跡 ＆ 陣地防衛評価エンジン ---
 
     function cloneGameState(srcBoard, srcLand) {
       const newBoard = srcBoard.map(row => row.map(cell => {
@@ -1272,28 +1272,33 @@
       return { board: newBoard, land: newLand };
     }
 
-    // 1. 危険度・価値マップ（ヒートマップ）生成
+    // 全13列の脅威と自軍領域侵入を計算する高度評価マップ
     function createDangerAndValueMap(stateBoard, owner) {
       const dangerMap = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
       const valueMap = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
       const enemyOwner = owner === "allies" ? "axis" : "allies";
 
       const enemyHQ = enemyOwner === "axis" ? { r: 12, c: 6 } : { r: 0, c: 6 };
-      const myHQ = owner === "allies" ? { r: 0, c: 6 } : { r: 12, c: 6 };
+      const columnThreats = Array(BOARD_SIZE).fill(0); // 列ごとの敵の危険度
 
-      // 敵の射程内を危険エリアとしてマーキング
+      // 1. 全列の敵スキャンと危険度マップ
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           const u = stateBoard[r][c];
           if (u && u.owner === enemyOwner) {
             const stats = getUnitStats(u, r, c);
             if (stats) {
+              const atkVal = stats.currentAtk;
+              // 敵が存在する「すべての列」に対して進撃警戒値を加算
+              columnThreats[c] += atkVal;
+
+              // 射程内の危険度付与
               const rng = stats.maxRange;
               for (let dr = -rng; dr <= rng; dr++) {
                 for (let dc = -rng; dc <= rng; dc++) {
                   const tr = r + dr, tc = c + dc;
                   if (tr >= 0 && tr < BOARD_SIZE && tc >= 0 && tc < BOARD_SIZE) {
-                    dangerMap[tr][tc] += stats.currentAtk;
+                    dangerMap[tr][tc] += atkVal;
                   }
                 }
               }
@@ -1302,35 +1307,33 @@
         }
       }
 
-      // 各マスの価値評価
+      // 2. マスごとの戦略価値・警報評価（自軍侵入に対する強いブロック）
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           let score = 0;
-          // 敵司令部に近いほど高評価
+
+          // 敵司令部への前進動機
           const distToEnemyHQ = Math.abs(r - enemyHQ.r) + Math.abs(c - enemyHQ.c);
-          score += (25 - distToEnemyHQ) * 8;
+          score += (25 - distToEnemyHQ) * 6;
 
-          // 中央の島
-          if (isIsland(r, c)) score += 35;
+          // 中央島
+          if (isIsland(r, c)) score += 30;
 
-          // 端のレーン（列 0, 1, 11, 12）で敵が迫っている場合は要警戒・補給ポイントに設定
-          if (c <= 1 || c >= 11) {
-            let flankThreat = false;
-            for (let er = 0; er < BOARD_SIZE; er++) {
-              const eu = stateBoard[er][c];
-              if (eu && eu.owner === enemyOwner) { flankThreat = true; break; }
+          // 敵がその列に存在する場合、その列全体（特に自軍側の領域）の防衛価値を劇的に引き上げる
+          if (columnThreats[c] > 0) {
+            if (owner === "allies" && r <= 4) {
+              score += 60 + columnThreats[c]; // どの列（中間含む）でも侵入されたら防御価値急上昇
             }
-            if (flankThreat) score += 50; // 端の警戒領域スコアを引き上げる
           }
 
           valueMap[r][c] = score;
         }
       }
 
-      return { dangerMap, valueMap };
+      return { dangerMap, valueMap, columnThreats };
     }
 
-    // 盤面総合評価関数
+    // 盤面総合評価関数 (Ver 5.2)
     function evaluateBoardState(stateBoard, stateLand, owner) {
       const enemyOwner = owner === "allies" ? "axis" : "allies";
       let myScore = 0, enemyScore = 0;
@@ -1341,8 +1344,8 @@
       if (!myHQ || myHQ.hp <= 0) return -999999;
       if (!enemyHQ || enemyHQ.hp <= 0) return 999999;
 
-      myScore += myHQ.hp * 50;
-      enemyScore += enemyHQ.hp * 50;
+      myScore += myHQ.hp * 100; // 司令部保護の優先度アップ
+      enemyScore += enemyHQ.hp * 100;
 
       const { dangerMap, valueMap } = createDangerAndValueMap(stateBoard, owner);
 
@@ -1352,13 +1355,19 @@
           if (cellUnit) {
             const stats = getUnitStats(cellUnit, r, c);
             if (stats && stats.type !== "hq") {
-              let unitVal = stats.hp * 2 + stats.currentAtk * 4;
-              if (stats.isNuke) unitVal += 2000;
+              let unitVal = stats.hp * 3 + stats.currentAtk * 5;
+              if (stats.isNuke) unitVal += 3000;
 
               if (cellUnit.owner === owner) {
-                myScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.4);
+                // 自軍ユニットが敵の迫る防衛ポイントにいる場合は高い評価
+                myScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.3);
               } else {
-                enemyScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.4);
+                // 敵が自軍陣地（r<=3）に深く侵入している場合、AIの危機評価ペナルティを爆発的に増やす
+                if (owner === "allies" && r <= 3) {
+                  enemyScore += unitVal + 150; // 自軍領地への侵入者を重く危険視
+                } else {
+                  enemyScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.3);
+                }
               }
             }
           }
@@ -1371,7 +1380,6 @@
       return myScore - enemyScore;
     }
 
-    // 合法手の生成
     function generateLegalMoves(stateBoard, stateLand, stateHand, turnOwner) {
       const moves = [];
 
@@ -1434,7 +1442,6 @@
       return moves;
     }
 
-    // Minimax法 (Alpha-Beta枝刈り)
     function minimax(stateBoard, stateLand, depth, alpha, beta, isMaximizing, aiOwner) {
       const currentTurnOwner = isMaximizing ? aiOwner : (aiOwner === "allies" ? "axis" : "allies");
 
@@ -1471,7 +1478,7 @@
             bestMove = move;
           }
           alpha = Math.max(alpha, result.score);
-          if (beta <= alpha) break; // Alpha枝刈り
+          if (beta <= alpha) break;
         }
         return { score: maxEval, move: bestMove };
       } else {
@@ -1495,7 +1502,7 @@
             bestMove = move;
           }
           beta = Math.min(beta, result.score);
-          if (beta <= alpha) break; // Beta枝刈り
+          if (beta <= alpha) break;
         }
         return { score: minEval, move: bestMove };
       }
@@ -1504,7 +1511,6 @@
     function processAITurn() {
       if (gameOver) return;
 
-      // 探査深さ2で最善手を計算
       const result = minimax(board, landOwners, 2, -Infinity, Infinity, true, "allies");
       const bestMove = result.move;
 
