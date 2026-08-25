@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 4.2</title>
+  <title>大東亜戦術ボードゲーム Ver 4.3</title>
   <style>
     body {
       font-family: sans-serif;
@@ -310,14 +310,14 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム Ver 4.2</h1>
+  <h1>大東亜戦術ボードゲーム Ver 4.3</h1>
 
   <!-- モード選択モーダル -->
   <div id="mode-modal">
     <div class="modal-content">
       <h2 style="margin-top:0;">対戦モードを選択</h2>
       <button class="mode-btn btn-pvp" onclick="startGame('pvp')">👥 対人戦 (180度回転・制限時間あり)</button>
-      <button class="mode-btn btn-ai" onclick="startGame('ai')">🤖 対AI戦 (強化AI: 攻6/防4・無制限)</button>
+      <button class="mode-btn btn-ai" onclick="startGame('ai')">🤖 対AI戦 (超攻撃型AI: 攻8/防2・無制限)</button>
     </div>
   </div>
 
@@ -386,7 +386,7 @@
       { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
       { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
       { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
-      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 999, vision: 0, isNuke: true, weight: 2 }
+      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 400, vision: 0, isNuke: true, weight: 2 } // 核攻撃力400
     ];
 
     const BOARD_SIZE = 13;
@@ -410,7 +410,7 @@
     function startGame(mode) {
       gameMode = mode;
       document.getElementById("mode-modal").style.display = "none";
-      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 強化AI (攻6:防4)";
+      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 突撃AI (攻8:防2)";
 
       const timerSelect = document.getElementById("timer-select");
       if (mode === "ai") {
@@ -499,8 +499,9 @@
       gameOver = false;
       isProcessingTurn = false;
 
-      board[0][6] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "allies", units: [] };
-      board[12][6] = { name: "司令部", type: "hq", hp: 100, maxHp: 100, atk: 0, owner: "axis", units: [] };
+      // 司令部HPを150に設定
+      board[0][6] = { name: "司令部", type: "hq", hp: 150, maxHp: 150, atk: 0, owner: "allies", units: [] };
+      board[12][6] = { name: "司令部", type: "hq", hp: 150, maxHp: 150, atk: 0, owner: "axis", units: [] };
 
       currentTurn = "axis";
 
@@ -738,7 +739,6 @@
 
       if (!isVisible(tr, tc, currentTurn)) return false;
 
-      // 潜水艦の攻撃対象判定修正: 駆逐艦(hasDestroyer/destroyer)への攻撃も許可
       if (myStats.isSub) {
         const targetStats = getUnitStats(targetRawUnit, tr, tc);
         if (!targetStats) return false;
@@ -1083,11 +1083,12 @@
       const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
       const targetRawUnit = board[tr][tc];
 
+      // 核攻撃力は 400（司令部一撃全滅を防ぐ）
       if (myStats.isNuke) {
         if (currentTurn === "axis" || gameMode === "pvp") {
-          alert(`💥【核ミサイル発射！】\n敵ターゲット(${tr}, ${tc})に 999 ダメージ！`);
+          alert(`💥【核ミサイル発射！】\n敵ターゲット(${tr}, ${tc})に 400 ダメージ！`);
         }
-        applyDamage(targetRawUnit, 999, tr, tc);
+        applyDamage(targetRawUnit, 400, tr, tc);
 
         if (isDead(targetRawUnit, tr, tc)) {
           if (targetRawUnit.type === "hq") {
@@ -1232,7 +1233,7 @@
           if (!gameOver) startTimer();
         } else if (gameMode === "ai") {
           if (currentTurn === "allies") {
-            overlay.innerText = "🤖 強化AI思考中 (攻6:防4)...";
+            overlay.innerText = "🤖 突撃AI思考中 (敵HQ最優先/攻8:防2)...";
             overlay.style.display = "flex";
             render();
             processAITurn();
@@ -1251,7 +1252,7 @@
       }
     }
 
-    // --- 高度評価AIロジック (攻撃60% : 防御40%スコアシステム) ---
+    // --- 攻撃超特化型AIロジック (敵HQ最優先 / 攻撃80% : 防御20%) ---
     function processAITurn() {
       setTimeout(() => {
         if (gameOver) return;
@@ -1259,7 +1260,10 @@
         let bestAction = null;
         let maxScore = -999999;
 
-        // 1. 攻撃候補の探索と評価 (攻撃行動)
+        const enemyHQ_R = 12;
+        const enemyHQ_C = 6;
+
+        // 1. 攻撃行動の評価
         for (let r = 0; r < BOARD_SIZE; r++) {
           for (let c = 0; c < BOARD_SIZE; c++) {
             const unit = board[r][c];
@@ -1274,25 +1278,22 @@
                     const myStats = getUnitStats(unit, r, c);
                     const targetStats = getUnitStats(target, tr, tc);
 
-                    // --- 攻撃評価 (60%比重) ---
+                    // 敵司令部への攻撃は絶対優先（即決定レベル）
                     if (target.type === "hq") {
-                      attackScore += 50000; // 勝利優先
+                      attackScore += 200000;
                     } else if (targetStats) {
                       const estimatedDmg = calculateAttack(myStats, targetStats);
-                      attackScore += Math.min(estimatedDmg, targetStats.hp) * 15;
-                      if (estimatedDmg >= targetStats.hp) attackScore += 300; // 撃破ボーナス
+                      attackScore += Math.min(estimatedDmg, targetStats.hp) * 20;
+                      if (estimatedDmg >= targetStats.hp) attackScore += 500;
                     }
-                    if (myStats.isNuke) attackScore += 2000;
 
-                    // 敵HQへの近接評価
-                    const distToEnemyHQ = Math.abs(tr - 12) + Math.abs(tc - 6);
-                    attackScore += (15 - distToEnemyHQ) * 20;
+                    if (myStats.isNuke) attackScore += 5000;
 
-                    // --- 防御評価 (40%比重) ---
-                    const distToMyHQ = Math.abs(tr - 0) + Math.abs(tc - 6);
-                    defenseScore += (15 - distToMyHQ) * 10; // HQ周辺の脅威排除
+                    // 敵HQへの距離が近い攻撃ほど高評価
+                    const distToEnemyHQ = Math.abs(tr - enemyHQ_R) + Math.abs(tc - enemyHQ_C);
+                    attackScore += (25 - distToEnemyHQ) * 80;
 
-                    const totalScore = (attackScore * 0.6) + (defenseScore * 0.4);
+                    const totalScore = (attackScore * 0.8) + (defenseScore * 0.2);
 
                     if (totalScore > maxScore) {
                       maxScore = totalScore;
@@ -1305,7 +1306,7 @@
           }
         }
 
-        // 2. 移動候補の探索と評価 (進軍・陣形維持)
+        // 2. 移動行動の評価（敵司令部への接近を最重視）
         for (let r = 0; r < BOARD_SIZE; r++) {
           for (let c = 0; c < BOARD_SIZE; c++) {
             const unit = board[r][c];
@@ -1316,29 +1317,23 @@
                     let attackScore = 0;
                     let defenseScore = 0;
 
-                    const myStats = getUnitStats(unit, r, c);
-                    const target = board[tr][tc];
+                    const currentDist = Math.abs(r - enemyHQ_R) + Math.abs(c - enemyHQ_C);
+                    const newDist = Math.abs(tr - enemyHQ_R) + Math.abs(tc - enemyHQ_C);
 
-                    // --- 攻撃評価 (60%比重) ---
-                    const currentDistToEnemyHQ = Math.abs(r - 12) + Math.abs(c - 6);
-                    const newDistToEnemyHQ = Math.abs(tr - 12) + Math.abs(tc - 6);
-                    attackScore += (currentDistToEnemyHQ - newDistToEnemyHQ) * 50; // 前進意欲
+                    // 敵HQへの進軍度合いを強力に評価
+                    attackScore += (currentDist - newDist) * 300;
+                    attackScore += (25 - newDist) * 100;
 
                     if (isIsland(tr, tc) && landOwners[tr][tc] !== "allies") {
-                      attackScore += 200; // 拠点占領
+                      attackScore += 300;
                     }
 
-                    // --- 防御評価 (40%比重) ---
+                    const target = board[tr][tc];
                     if (target && target.owner === "allies") {
-                      const targetUnits = target.units || [target];
-                      defenseScore += (targetUnits.length * 40); // 合体で耐久力強化
+                      attackScore += 150; // 進軍用スタック強化
                     }
 
-                    // 自軍HQ防衛ゾーンの確保
-                    const distToMyHQ = Math.abs(tr - 0) + Math.abs(tc - 6);
-                    if (distToMyHQ <= 3) defenseScore += 100;
-
-                    const totalScore = (attackScore * 0.6) + (defenseScore * 0.4);
+                    const totalScore = (attackScore * 0.8) + (defenseScore * 0.2);
 
                     if (totalScore > maxScore) {
                       maxScore = totalScore;
@@ -1351,7 +1346,7 @@
           }
         }
 
-        // 3. 手札からの配置思考 (召喚評価)
+        // 3. 手札の召喚評価（敵陣側前線への配置を強烈に優先）
         if (hands.allies.length > 0) {
           for (let i = 0; i < hands.allies.length; i++) {
             const card = hands.allies[i];
@@ -1365,15 +1360,13 @@
                   let attackScore = 0;
                   let defenseScore = 0;
 
+                  const distToEnemyHQ = Math.abs(r - enemyHQ_R) + Math.abs(c - enemyHQ_C);
+
                   if (board[r][c] === null) {
-                    attackScore += card.atk * 8;
-                    const distToEnemyHQ = Math.abs(r - 12) + Math.abs(c - 6);
-                    attackScore += (15 - distToEnemyHQ) * 15;
+                    attackScore += card.atk * 15;
+                    attackScore += (25 - distToEnemyHQ) * 120; // 敵陣に近い場所ほど前線配備として超高評価
 
-                    const distToMyHQ = Math.abs(r - 0) + Math.abs(c - 6);
-                    defenseScore += (15 - distToMyHQ) * 12;
-
-                    const totalScore = (attackScore * 0.6) + (defenseScore * 0.4);
+                    const totalScore = (attackScore * 0.8) + (defenseScore * 0.2);
 
                     if (totalScore > maxScore) {
                       maxScore = totalScore;
@@ -1382,10 +1375,10 @@
                   } else if (board[r][c].owner === "allies" && board[r][c].type !== "hq") {
                     const targetUnits = board[r][c].units || [board[r][c]];
                     if (targetUnits.length < 7 && !card.isNuke) {
-                      attackScore += card.atk * 10;
-                      defenseScore += 150; // 重ねがけ防衛
+                      attackScore += card.atk * 20;
+                      attackScore += (25 - distToEnemyHQ) * 150; // 前線部隊の強化スタック
 
-                      const totalScore = (attackScore * 0.6) + (defenseScore * 0.4);
+                      const totalScore = (attackScore * 0.8) + (defenseScore * 0.2);
 
                       if (totalScore > maxScore) {
                         maxScore = totalScore;
@@ -1399,7 +1392,7 @@
           }
         }
 
-        // 行動の実行
+        // 思考結果の反映・実行
         if (bestAction) {
           if (bestAction.type === "attack") {
             executeAttack(bestAction.sr, bestAction.sc, bestAction.tr, bestAction.tc);
@@ -1422,7 +1415,7 @@
         }
 
         finishTurn();
-      }, 600);
+      }, 500);
     }
   </script>
 </body>
