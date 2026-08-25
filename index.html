@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 5.2 (Fix Flank & Defense AI)</title>
+  <title>大東亜戦術ボードゲーム Ver 5.3 (Aggressive AI & Air Strike Expansion)</title>
   <style>
     body {
       font-family: sans-serif;
@@ -310,13 +310,13 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム Ver 5.2 (Fix Flank AI)</h1>
+  <h1>大東亜戦術ボードゲーム Ver 5.3 (Aggressive AI)</h1>
 
   <div id="mode-modal">
     <div class="modal-content">
       <h2 style="margin-top:0;">対戦モードを選択</h2>
       <button class="mode-btn btn-pvp" onclick="startGame('pvp')">👥 対人戦 (180度回転・制限時間あり)</button>
-      <button class="mode-btn btn-ai" onclick="startGame('ai')">🧠 VS 思考エンジンAI (Ver 5.2 防衛強化版)</button>
+      <button class="mode-btn btn-ai" onclick="startGame('ai')">🧠 VS 超攻撃型AI (Ver 5.3)</button>
     </div>
   </div>
 
@@ -379,9 +379,9 @@
       { name: "軽戦車",     type: "land", hp: 30, maxHp: 30, atk: 15, vision: 1, weight: 10 },
       { name: "中戦車",     type: "land", hp: 45, maxHp: 45, atk: 25, vision: 1, weight: 10 },
       { name: "重戦車",     type: "land", hp: 65, maxHp: 65, atk: 40, vision: 1, weight: 8 },
-      { name: "戦術爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2, forwardOnly: true, weight: 10 },
-      { name: "戦闘爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2, forwardOnly: true, weight: 10 },
-      { name: "海軍爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 10, vision: 2, forwardOnly: true, antiNaval: true, weight: 10 },
+      { name: "戦術爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2, isAirUnit: true, weight: 10 },
+      { name: "戦闘爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 15, vision: 2, isAirUnit: true, weight: 10 },
+      { name: "海軍爆撃機", type: "air",  hp: 25, maxHp: 25, atk: 10, vision: 2, isAirUnit: true, antiNaval: true, weight: 10 },
       { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
       { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
       { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
@@ -409,7 +409,7 @@
     function startGame(mode) {
       gameMode = mode;
       document.getElementById("mode-modal").style.display = "none";
-      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 思考エンジンAI (Ver 5.2)";
+      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 超攻撃型AI (Ver 5.3)";
 
       const timerSelect = document.getElementById("timer-select");
       if (mode === "ai") {
@@ -592,6 +592,7 @@
       let hasDestroyer = units.some(u => u.destroyer);
       let hasAntiNavalAir = units.some(u => u.antiNaval);
       let isNuke = units.some(u => u.isNuke);
+      let isAirUnit = units.some(u => u.isAirUnit);
 
       if (mainType === "land" && (r >= 3 && r <= 9) && !isIsland(r, c)) {
         if (cellUnit.transportHp === undefined) cellUnit.transportHp = 30;
@@ -643,7 +644,8 @@
         hasDestroyer: hasDestroyer,
         hasAntiNavalAir: hasAntiNavalAir,
         maxRange: maxRange,
-        isNuke: isNuke
+        isNuke: isNuke,
+        isAirUnit: isAirUnit
       };
     }
 
@@ -719,17 +721,22 @@
       return true;
     }
 
+    // ★ 修正：空軍ユニットは前方に加え「左右1マス」にも攻撃可能に拡張
     function isValidAttackTarget(sr, sc, tr, tc, currentTurnVal = currentTurn, currentBoard = board) {
       const myRawUnit = currentBoard[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
 
       const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
-      const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
 
-      if (myUnits.some(u => u.forwardOnly)) {
+      if (myStats.isAirUnit) {
         const dr = tr - sr, dc = tc - sc;
-        const isForward = (currentTurnVal === "axis" && dr < 0 && dc === 0) || (currentTurnVal === "allies" && dr > 0 && dc === 0);
-        if (!isForward || Math.abs(dr) > 2) return false;
+        const forwardDir = (currentTurnVal === "axis") ? -1 : 1;
+
+        const isForward1 = (dr === forwardDir && dc === 0);
+        const isForward2 = (dr === forwardDir * 2 && dc === 0);
+        const isSide1 = (dr === 0 && (dc === 1 || dc === -1));
+
+        if (!isForward1 && !isForward2 && !isSide1) return false;
       } else {
         const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
         if (dist === 0 || dist > myStats.maxRange) return false;
@@ -1237,7 +1244,7 @@
           if (!gameOver) startTimer();
         } else if (gameMode === "ai") {
           if (currentTurn === "allies") {
-            overlay.innerText = "🧠 Minimax & 防衛強化 AI思考中...";
+            overlay.innerText = "🧠 超攻撃型 AI思考中...";
             overlay.style.display = "flex";
             render();
             setTimeout(processAITurn, 100);
@@ -1256,7 +1263,7 @@
       }
     }
 
-    // --- Ver 5.2 AI: 脅威追跡 ＆ 陣地防衛評価エンジン ---
+    // --- Ver 5.3 AI: 超攻撃型（アグレッシブ）評価エンジン ---
 
     function cloneGameState(srcBoard, srcLand) {
       const newBoard = srcBoard.map(row => row.map(cell => {
@@ -1272,68 +1279,7 @@
       return { board: newBoard, land: newLand };
     }
 
-    // 全13列の脅威と自軍領域侵入を計算する高度評価マップ
-    function createDangerAndValueMap(stateBoard, owner) {
-      const dangerMap = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
-      const valueMap = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
-      const enemyOwner = owner === "allies" ? "axis" : "allies";
-
-      const enemyHQ = enemyOwner === "axis" ? { r: 12, c: 6 } : { r: 0, c: 6 };
-      const columnThreats = Array(BOARD_SIZE).fill(0); // 列ごとの敵の危険度
-
-      // 1. 全列の敵スキャンと危険度マップ
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          const u = stateBoard[r][c];
-          if (u && u.owner === enemyOwner) {
-            const stats = getUnitStats(u, r, c);
-            if (stats) {
-              const atkVal = stats.currentAtk;
-              // 敵が存在する「すべての列」に対して進撃警戒値を加算
-              columnThreats[c] += atkVal;
-
-              // 射程内の危険度付与
-              const rng = stats.maxRange;
-              for (let dr = -rng; dr <= rng; dr++) {
-                for (let dc = -rng; dc <= rng; dc++) {
-                  const tr = r + dr, tc = c + dc;
-                  if (tr >= 0 && tr < BOARD_SIZE && tc >= 0 && tc < BOARD_SIZE) {
-                    dangerMap[tr][tc] += atkVal;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 2. マスごとの戦略価値・警報評価（自軍侵入に対する強いブロック）
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          let score = 0;
-
-          // 敵司令部への前進動機
-          const distToEnemyHQ = Math.abs(r - enemyHQ.r) + Math.abs(c - enemyHQ.c);
-          score += (25 - distToEnemyHQ) * 6;
-
-          // 中央島
-          if (isIsland(r, c)) score += 30;
-
-          // 敵がその列に存在する場合、その列全体（特に自軍側の領域）の防衛価値を劇的に引き上げる
-          if (columnThreats[c] > 0) {
-            if (owner === "allies" && r <= 4) {
-              score += 60 + columnThreats[c]; // どの列（中間含む）でも侵入されたら防御価値急上昇
-            }
-          }
-
-          valueMap[r][c] = score;
-        }
-      }
-
-      return { dangerMap, valueMap, columnThreats };
-    }
-
-    // 盤面総合評価関数 (Ver 5.2)
+    // アグレッシブ型評価関数
     function evaluateBoardState(stateBoard, stateLand, owner) {
       const enemyOwner = owner === "allies" ? "axis" : "allies";
       let myScore = 0, enemyScore = 0;
@@ -1344,10 +1290,8 @@
       if (!myHQ || myHQ.hp <= 0) return -999999;
       if (!enemyHQ || enemyHQ.hp <= 0) return 999999;
 
-      myScore += myHQ.hp * 100; // 司令部保護の優先度アップ
-      enemyScore += enemyHQ.hp * 100;
-
-      const { dangerMap, valueMap } = createDangerAndValueMap(stateBoard, owner);
+      // 敵司令部撃破への超高評価
+      enemyScore += enemyHQ.hp * 300; 
 
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
@@ -1355,25 +1299,26 @@
           if (cellUnit) {
             const stats = getUnitStats(cellUnit, r, c);
             if (stats && stats.type !== "hq") {
-              let unitVal = stats.hp * 3 + stats.currentAtk * 5;
-              if (stats.isNuke) unitVal += 3000;
+              let unitVal = stats.hp * 2 + stats.currentAtk * 8;
+              if (stats.isNuke) unitVal += 5000;
 
               if (cellUnit.owner === owner) {
-                // 自軍ユニットが敵の迫る防衛ポイントにいる場合は高い評価
-                myScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.3);
+                // 前進ボーナス（敵司令部との距離が近いほど高得点）
+                const distToEnemyHQ = Math.abs(r - 12) + Math.abs(c - 6);
+                const advanceBonus = (20 - distToEnemyHQ) * 25;
+
+                // スタック（合体）で強くなったユニットへのボーナス
+                const stackBonus = (stats.units ? stats.units.length : 1) * 20;
+
+                myScore += unitVal + advanceBonus + stackBonus;
               } else {
-                // 敵が自軍陣地（r<=3）に深く侵入している場合、AIの危機評価ペナルティを爆発的に増やす
-                if (owner === "allies" && r <= 3) {
-                  enemyScore += unitVal + 150; // 自軍領地への侵入者を重く危険視
-                } else {
-                  enemyScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.3);
-                }
+                // 敵ユニットの残存は大きなマイナス（撃破優先度UP）
+                enemyScore += unitVal * 1.5;
               }
             }
           }
 
-          if (stateLand[r][c] === owner) myScore += 15;
-          if (stateLand[r][c] === enemyOwner) enemyScore += 15;
+          if (stateLand[r][c] === owner) myScore += 10;
         }
       }
 
@@ -1383,7 +1328,7 @@
     function generateLegalMoves(stateBoard, stateLand, stateHand, turnOwner) {
       const moves = [];
 
-      // 1. 攻撃手
+      // 1. 攻撃手（最優先で収集）
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           const u = stateBoard[r][c];
@@ -1391,7 +1336,7 @@
             for (let tr = 0; tr < BOARD_SIZE; tr++) {
               for (let tc = 0; tc < BOARD_SIZE; tc++) {
                 if (isValidAttackTarget(r, c, tr, tc, turnOwner, stateBoard)) {
-                  moves.push({ type: "attack", sr: r, sc: c, tr, tc });
+                  moves.push({ type: "attack", sr: r, sc: c, tr, tc, priority: 10 });
                 }
               }
             }
@@ -1407,7 +1352,9 @@
             for (let tr = 0; tr < BOARD_SIZE; tr++) {
               for (let tc = 0; tc < BOARD_SIZE; tc++) {
                 if (isValidMoveTarget(r, c, tr, tc, turnOwner, stateBoard)) {
-                  moves.push({ type: "move", sr: r, sc: c, tr, tc });
+                  // 前進する移動にプライオリティを付与
+                  const isForward = (turnOwner === "allies" && tr > r) || (turnOwner === "axis" && tr < r);
+                  moves.push({ type: "move", sr: r, sc: c, tr, tc, priority: isForward ? 5 : 1 });
                 }
               }
             }
@@ -1426,11 +1373,11 @@
 
               if ((card.type !== "sea" && isMyLand) || (card.type === "sea" && isMyCoast)) {
                 if (stateBoard[r][c] === null) {
-                  moves.push({ type: "deploy", handIndex: i, tr: r, tc: c, card });
+                  moves.push({ type: "deploy", handIndex: i, tr: r, tc: c, card, priority: 2 });
                 } else if (stateBoard[r][c].owner === turnOwner && stateBoard[r][c].type !== "hq") {
                   const targetUnits = stateBoard[r][c].units || [stateBoard[r][c]];
                   if (targetUnits.length < 7 && !card.isNuke) {
-                    moves.push({ type: "deploy", handIndex: i, tr: r, tc: c, card });
+                    moves.push({ type: "deploy", handIndex: i, tr: r, tc: c, card, priority: 4 });
                   }
                 }
               }
@@ -1439,7 +1386,8 @@
         }
       }
 
-      return moves;
+      // 優先度の高い順（攻撃・前進・配置）にソートしてAIの検索を高速化＆積極化
+      return moves.sort((a, b) => b.priority - a.priority);
     }
 
     function minimax(stateBoard, stateLand, depth, alpha, beta, isMaximizing, aiOwner) {
