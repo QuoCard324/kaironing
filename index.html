@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 4.0 (AI対戦実装版)</title>
+  <title>大東亜戦術ボードゲーム Ver 4.1</title>
   <style>
     body {
       font-family: sans-serif;
@@ -310,7 +310,7 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム Ver 4.0</h1>
+  <h1>大東亜戦術ボードゲーム Ver 4.1</h1>
 
   <!-- モード選択モーダル -->
   <div id="mode-modal">
@@ -386,7 +386,7 @@
       { name: "戦艦",       type: "sea",  hp: 50, maxHp: 50, atk: 20, vision: 2, weight: 10 },
       { name: "潜水艦",     type: "sea",  hp: 35, maxHp: 35, atk: 15, vision: 1, sub: true, weight: 10 },
       { name: "駆逐艦",     type: "sea",  hp: 45, maxHp: 45, atk: 15, vision: 2, destroyer: true, weight: 10 },
-      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 200, vision: 0, isNuke: true, weight: 2 }
+      { name: "核",         type: "land", hp: 5,  maxHp: 5,  atk: 999, vision: 0, isNuke: true, weight: 2 }
     ];
 
     const BOARD_SIZE = 13;
@@ -693,13 +693,26 @@
 
       if (targetRawUnit && targetRawUnit.owner === currentTurn) {
         if (targetRawUnit.type === "hq") return false;
-        if (getCategory(myRawUnit) !== getCategory(targetRawUnit)) return false;
-
+        
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-        if (myUnits.some(u => u.sub || u.isNuke) || targetUnits.some(u => u.sub || u.isNuke)) return false;
-        if (myUnits.length + targetUnits.length > 6) return false;
+        // 核は合体不可
+        if (myUnits.some(u => u.isNuke) || targetUnits.some(u => u.isNuke)) return false;
+
+        // 潜水艦の合体条件判定（潜水艦どうしのみ許可）
+        const myHasSub = myUnits.some(u => u.sub);
+        const targetHasSub = targetUnits.some(u => u.sub);
+        if (myHasSub || targetHasSub) {
+          const myAllSub = myUnits.every(u => u.sub);
+          const targetAllSub = targetUnits.every(u => u.sub);
+          if (!myAllSub || !targetAllSub) return false;
+        } else {
+          if (getCategory(myRawUnit) !== getCategory(targetRawUnit)) return false;
+        }
+
+        // 合体上限：最大7体
+        if (myUnits.length + targetUnits.length > 7) return false;
         return true;
       }
 
@@ -906,7 +919,6 @@
       const handEl = document.getElementById("hand");
       handEl.innerHTML = "";
 
-      // AI戦時に相手（AI手番）の手札を隠す処理
       if (gameMode === "ai" && currentTurn === "allies") {
         hands[currentTurn].forEach(() => {
           const cardEl = document.createElement("div");
@@ -959,14 +971,26 @@
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
           if (target.type === "hq") { alert("司令部には合体できません"); return; }
 
-          if (card.type !== getCategory(target)) { alert("異なる種類のユニットは組み合わせられません"); return; }
           const targetUnits = target.units || [target];
 
-          if (card.isNuke || card.sub || targetUnits.some(u => u.isNuke || u.sub)) {
-            alert("【制限】核および潜水艦は合体できません。");
+          // 核は合体不可
+          if (card.isNuke || targetUnits.some(u => u.isNuke)) {
+            alert("【制限】核は合体できません。");
             return;
           }
-          if (targetUnits.length >= 6) { alert("合体上限（最大6体）です"); return; }
+
+          // 潜水艦の合体判定：潜水艦どうしのみ合体可
+          if (card.sub || targetUnits.some(u => u.sub)) {
+            if (!card.sub || !targetUnits.every(u => u.sub)) {
+              alert("【制限】潜水艦は他の種類の艦船・ユニットと合体できません（潜水艦同士のみ可能）。");
+              return;
+            }
+          } else {
+            if (card.type !== getCategory(target)) { alert("異なる種類のユニットは組み合わせられません"); return; }
+          }
+
+          // 合体上限：最大7体
+          if (targetUnits.length >= 7) { alert("合体上限（最大7体）です"); return; }
 
           targetUnits.push({ ...card });
           target.units = targetUnits;
@@ -1062,9 +1086,9 @@
 
       if (myStats.isNuke) {
         if (currentTurn === "axis" || gameMode === "pvp") {
-          alert(`💥【核ミサイル発射！】\n敵ターゲット(${tr}, ${tc})に200ダメージ！`);
+          alert(`💥【核ミサイル発射！】\n敵ターゲット(${tr}, ${tc})に 999 ダメージ！`);
         }
-        applyDamage(targetRawUnit, 200, tr, tc);
+        applyDamage(targetRawUnit, 999, tr, tc);
 
         if (isDead(targetRawUnit, tr, tc)) {
           if (targetRawUnit.type === "hq") {
@@ -1209,13 +1233,11 @@
           if (!gameOver) startTimer();
         } else if (gameMode === "ai") {
           if (currentTurn === "allies") {
-            // AIの手番開始時に画面全体（盤面も含む）を覆い隠す
             overlay.innerText = "🤖 AIが思考中...";
             overlay.style.display = "flex";
             render();
             processAITurn();
           } else {
-            // 人間の手番に戻った時に画面隠蔽を解く
             overlay.style.display = "none";
             render();
             if (!gameOver) startTimer();
@@ -1236,7 +1258,7 @@
         if (gameOver) return;
         let aiDone = false;
 
-        // 1. 攻撃優先思考（HQ攻撃・決着、有利トレード、核使用）
+        // 1. 攻撃優先思考
         let attackCandidates = [];
         for (let r = 0; r < BOARD_SIZE; r++) {
           for (let c = 0; c < BOARD_SIZE; c++) {
@@ -1281,14 +1303,11 @@
                   for (let tc = 0; tc < BOARD_SIZE; tc++) {
                     if (isValidMoveTarget(r, c, tr, tc)) {
                       let score = 0;
-                      // 敵HQ(12,6)に近づく移動を高評価
                       const currentDist = Math.abs(r - 12) + Math.abs(c - 6);
                       const targetDist = Math.abs(tr - 12) + Math.abs(tc - 6);
                       score += (currentDist - targetDist) * 10;
 
-                      // スタック合体も評価
                       if (board[tr][tc] && board[tr][tc].owner === "allies") score += 15;
-                      // 島占領も評価
                       if (isIsland(tr, tc) && landOwners[tr][tc] !== "allies") score += 20;
 
                       moveCandidates.push({ sr: r, sc: c, tr, tc, score });
