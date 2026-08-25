@@ -206,6 +206,14 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     .card.selected { background-color: #ffe8a1; border-color: #ffc107; border-width: 2px; }
+    .card.hidden-card {
+      background-color: #444;
+      border-color: #222;
+      color: #888;
+      cursor: not-allowed;
+      text-align: center;
+      line-height: 20px;
+    }
 
     .status-text { font-weight: bold; font-size: 1.1em; }
     .axis-text { color: #dc3545; }
@@ -898,6 +906,17 @@
       const handEl = document.getElementById("hand");
       handEl.innerHTML = "";
 
+      // AI戦時に相手（AI手番）の手札を隠す処理
+      if (gameMode === "ai" && currentTurn === "allies") {
+        hands[currentTurn].forEach(() => {
+          const cardEl = document.createElement("div");
+          cardEl.classList.add("card", "hidden-card");
+          cardEl.innerText = "🔒 秘密";
+          handEl.appendChild(cardEl);
+        });
+        return;
+      }
+
       hands[currentTurn].forEach((card, index) => {
         const cardEl = document.createElement("div");
         cardEl.classList.add("card");
@@ -1169,11 +1188,12 @@
         hands[currentTurn].push(getRandomCard());
       }
 
+      // 対人戦（PvP）のみ移行用オーバーレイを表示
       if (gameMode === "pvp") {
         document.getElementById("wait-overlay").style.display = "flex";
       }
 
-      setTimeout(() => {
+      const switchTurn = () => {
         currentTurn = currentTurn === "axis" ? "allies" : "axis";
         selectedHandIndex = null;
         selectedBoardPos = null;
@@ -1190,11 +1210,19 @@
             startTimer();
           }
         }
-      }, 800);
+      };
+
+      // AI戦時はウェイト時間を排除して即座にターン移行
+      if (gameMode === "ai") {
+        switchTurn();
+      } else {
+        setTimeout(switchTurn, 800);
+      }
     }
 
     // --- 高度AI思考ロジック ---
     function processAITurn() {
+      // 思考ディレイを短縮（300ms）
       setTimeout(() => {
         if (gameOver) return;
         let aiDone = false;
@@ -1296,7 +1324,7 @@
         }
 
         finishTurn();
-      }, 1000);
+      }, 300);
     }
   </script>
 </body>
