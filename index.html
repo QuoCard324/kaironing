@@ -297,14 +297,14 @@
     #wait-overlay {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.4);
+      background: rgba(0, 0, 0, 0.92);
       display: none;
       justify-content: center;
       align-items: center;
       color: #fff;
       font-size: 24px;
       font-weight: bold;
-      z-index: 1000;
+      z-index: 2000;
     }
   </style>
 </head>
@@ -1188,9 +1188,11 @@
         hands[currentTurn].push(getRandomCard());
       }
 
-      // 対人戦（PvP）のみ移行用オーバーレイを表示
+      const overlay = document.getElementById("wait-overlay");
+
       if (gameMode === "pvp") {
-        document.getElementById("wait-overlay").style.display = "flex";
+        overlay.innerText = "相手のターンへ移行中...";
+        overlay.style.display = "flex";
       }
 
       const switchTurn = () => {
@@ -1200,19 +1202,27 @@
         selectedSubUnits = null;
         actionMode = null;
         isProcessingTurn = false;
-        document.getElementById("wait-overlay").style.display = "none";
-        render();
 
-        if (!gameOver) {
-          if (gameMode === "ai" && currentTurn === "allies") {
+        if (gameMode === "pvp") {
+          overlay.style.display = "none";
+          render();
+          if (!gameOver) startTimer();
+        } else if (gameMode === "ai") {
+          if (currentTurn === "allies") {
+            // AIの手番開始時に画面全体（盤面も含む）を覆い隠す
+            overlay.innerText = "🤖 AIが思考中...";
+            overlay.style.display = "flex";
+            render();
             processAITurn();
           } else {
-            startTimer();
+            // 人間の手番に戻った時に画面隠蔽を解く
+            overlay.style.display = "none";
+            render();
+            if (!gameOver) startTimer();
           }
         }
       };
 
-      // AI戦時はウェイト時間を排除して即座にターン移行
       if (gameMode === "ai") {
         switchTurn();
       } else {
@@ -1222,7 +1232,6 @@
 
     // --- 高度AI思考ロジック ---
     function processAITurn() {
-      // 思考ディレイを短縮（300ms）
       setTimeout(() => {
         if (gameOver) return;
         let aiDone = false;
@@ -1324,7 +1333,7 @@
         }
 
         finishTurn();
-      }, 300);
+      }, 500);
     }
   </script>
 </body>
