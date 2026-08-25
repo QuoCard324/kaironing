@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 3.2 (タイマー機能付き)</title>
+  <title>大東亜戦術ボードゲーム Ver 4.0 (AI対戦実装版)</title>
   <style>
     body {
       font-family: sans-serif;
@@ -53,7 +53,6 @@
       box-sizing: border-box;
     }
 
-    /* 盤面のみ回転を設定 */
     #board {
       display: grid;
       grid-template-columns: repeat(13, 46px);
@@ -64,12 +63,10 @@
       transition: transform 0.8s ease-in-out;
     }
 
-    /* 連合国（Allies）ターンの時に盤面のみ180度回転 */
     #board.rotated {
       transform: rotate(180deg);
     }
 
-    /* 盤面が回転している時、中のユニットとバッジだけ逆回転させて常に正位置に保つ */
     #board.rotated .unit,
     #board.rotated .stack-badge {
       transform: rotate(180deg);
@@ -97,7 +94,6 @@
     .cell.island { background-color: #d4a373; }
     .cell.sea { background-color: #aed9e0; }
 
-    /* ハイライト */
     .cell.selected { border: 3px solid #ff1493; z-index: 10; }
     .cell.movable {
       border: 3px solid #ffea00 !important;
@@ -129,7 +125,6 @@
     .unit.allies { background-color: #0d6efd; }
     .unit.hq { border: 2px solid #ffd700; }
     
-    /* 核の所属別カラー設定 */
     .unit.nuke.axis { border: 2px solid #ff0055; background-color: #8b0000; }
     .unit.nuke.allies { border: 2px solid #00ffff; background-color: #00008b; }
 
@@ -169,7 +164,6 @@
       gap: 10px;
     }
 
-    /* 手札エリア */
     #hand {
       display: flex;
       flex-direction: column;
@@ -182,7 +176,6 @@
       border-radius: 8px;
     }
 
-    /* タイマーパネル（手札の下） */
     #timer-panel {
       width: 210px;
       background-color: #fff;
@@ -218,7 +211,6 @@
     .axis-text { color: #dc3545; }
     .allies-text { color: #0d6efd; }
 
-    /* コマンド選択ポップアップ */
     #action-menu {
       position: absolute;
       background: #fff;
@@ -244,24 +236,25 @@
     #action-menu .btn-split { background-color: #17a2b8; color: white; }
     #action-menu .btn-cancel { background-color: #e0e0e0; }
 
-    /* 分割モーダルダイアログ */
-    #split-modal {
+    #split-modal, #mode-modal {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(0,0,0,0.5);
-      display: none;
+      display: flex;
       justify-content: center;
       align-items: center;
       z-index: 1100;
     }
+
     .modal-content {
       background: white;
-      padding: 15px 20px;
+      padding: 20px;
       border-radius: 8px;
-      min-width: 240px;
+      min-width: 260px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-      text-align: left;
+      text-align: center;
     }
+
     .split-list {
       margin: 10px 0;
       display: flex;
@@ -269,6 +262,7 @@
       gap: 6px;
       max-height: 200px;
       overflow-y: auto;
+      text-align: left;
     }
     .split-item {
       font-size: 13px;
@@ -277,7 +271,21 @@
       gap: 8px;
     }
 
-    /* ターン待機オーバーレイ */
+    .mode-btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: white;
+    }
+    .btn-pvp { background-color: #28a745; }
+    .btn-ai { background-color: #0d6efd; }
+
     #wait-overlay {
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
@@ -294,27 +302,28 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム (13x13 Ver 3.2)</h1>
+  <h1>大東亜戦術ボードゲーム Ver 4.0</h1>
+
+  <!-- モード選択モーダル -->
+  <div id="mode-modal">
+    <div class="modal-content">
+      <h2 style="margin-top:0;">対戦モードを選択</h2>
+      <button class="mode-btn btn-pvp" onclick="startGame('pvp')">👥 対人戦 (180度回転・制限時間あり)</button>
+      <button class="mode-btn btn-ai" onclick="startGame('ai')">🤖 対AI戦 (難易度: 難・回転なし・無制限)</button>
+    </div>
+  </div>
 
   <div id="main-layout">
     <div id="left-panel">
       <button id="reset-btn" onclick="resetGame()">🔄 試合リセット</button>
       <div id="game-info">
+        <p style="margin:5px 0;">モード: <span id="mode-text" style="font-weight:bold;">-</span></p>
         <p style="margin:5px 0;">現在のターン:<br><span id="current-turn" class="status-text axis-text">枢軸国 (Axis)</span></p>
-        <p style="color: #666; font-size: 0.75em; margin:5px 0; text-align:left;">
-          ・<b>調整点:</b><br>
-           - 枢軸国の核=濃赤、連合国の核=濃青<br>
-           - 核の合体制限（合体不可）<br>
-           - 海上核（輸送船）時の攻撃力を5へ修正<br>
-           - 海軍ユニットの陸上・島への移動禁止<br>
-           - ターン交替時の盤面反転
-        </p>
       </div>
     </div>
 
     <div id="board-container" style="position:relative;">
       <div id="board"></div>
-      <!-- アクションメニュー -->
       <div id="action-menu">
         <button class="btn-move" onclick="selectActionMode('move')">🏃‍♂️ 移動</button>
         <button class="btn-atk" onclick="selectActionMode('attack')">⚔️ 攻撃</button>
@@ -327,7 +336,6 @@
       <h3 style="margin:0;">手札 (<span id="hand-owner">枢軸国</span>) <span id="hand-count" style="font-size:11px;"></span></h3>
       <div id="hand"></div>
       
-      <!-- タイマーパネル（手札の下） -->
       <div id="timer-panel">
         <div style="font-size: 12px; font-weight: bold;">⏱ 制限時間設定</div>
         <select id="timer-select" onchange="changeTimeLimit()" style="margin-top: 4px; font-size: 12px; padding: 2px 5px;">
@@ -337,14 +345,14 @@
           <option value="20">1手 20秒</option>
           <option value="25">1手 25秒</option>
           <option value="30">1手 30秒</option>
+          <option value="0">無制限</option>
         </select>
         <div id="timer-display">10</div>
       </div>
     </div>
   </div>
 
-  <!-- 分割モーダル -->
-  <div id="split-modal">
+  <div id="split-modal" style="display:none;">
     <div class="modal-content">
       <h3 style="margin:0 0 10px 0; font-size:16px;">分離するユニットを選択</h3>
       <div class="split-list" id="split-list"></div>
@@ -374,6 +382,7 @@
     ];
 
     const BOARD_SIZE = 13;
+    let gameMode = "pvp"; // 'pvp' or 'ai'
     let currentTurn = "axis";
     let board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
 
@@ -386,13 +395,42 @@
     let gameOver = false;
     let isProcessingTurn = false;
 
-    // タイマー用変数
     let timeLimit = 10;
     let timeLeft = 10;
     let timerId = null;
 
+    function startGame(mode) {
+      gameMode = mode;
+      document.getElementById("mode-modal").style.display = "none";
+      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS AI (難解)";
+
+      const timerSelect = document.getElementById("timer-select");
+      if (mode === "ai") {
+        timerSelect.value = "0";
+        timeLimit = 0;
+        timerSelect.disabled = true;
+      } else {
+        timerSelect.disabled = false;
+        timeLimit = parseInt(timerSelect.value, 10);
+      }
+
+      initGame();
+    }
+
+    function resetGame() {
+      if (confirm("試合をリセットしますか？")) {
+        document.getElementById("mode-modal").style.display = "flex";
+      }
+    }
+
     function startTimer() {
       stopTimer();
+      if (timeLimit === 0 || gameMode === "ai") {
+        document.getElementById("timer-display").innerText = "∞";
+        document.getElementById("timer-display").style.color = "#28a745";
+        return;
+      }
+
       timeLeft = timeLimit;
       updateTimerDisplay();
       
@@ -418,13 +456,9 @@
 
     function updateTimerDisplay() {
       const display = document.getElementById("timer-display");
-      if (display) {
+      if (display && timeLimit > 0) {
         display.innerText = timeLeft;
-        if (timeLeft <= 3) {
-          display.style.color = "#ff0000";
-        } else {
-          display.style.color = "#dc3545";
-        }
+        display.style.color = timeLeft <= 3 ? "#ff0000" : "#dc3545";
       }
     }
 
@@ -471,19 +505,11 @@
       startTimer();
     }
 
-    function resetGame() {
-      if (confirm("試合をリセットして最初からやり直しますか？")) {
-        initGame();
-      }
-    }
-
     function getRandomCard() {
       const totalWeight = CARD_TYPES.reduce((sum, card) => sum + card.weight, 0);
       let rand = Math.random() * totalWeight;
       for (const card of CARD_TYPES) {
-        if (rand < card.weight) {
-          return { ...card };
-        }
+        if (rand < card.weight) return { ...card };
         rand -= card.weight;
       }
       return { ...CARD_TYPES[0] };
@@ -523,16 +549,12 @@
 
     function isCoastOfMyLand(r, c, owner) {
       if (landOwners[r][c] !== null || isIsland(r, c)) return false;
-
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           if (dr === 0 && dc === 0) continue;
-          const nr = r + dr;
-          const nc = c + dc;
+          const nr = r + dr, nc = c + dc;
           if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
-            if (landOwners[nr][nc] === owner) {
-              return true;
-            }
+            if (landOwners[nr][nc] === owner) return true;
           }
         }
       }
@@ -562,10 +584,7 @@
       let isNuke = units.some(u => u.isNuke);
 
       if (mainType === "land" && (r >= 3 && r <= 9) && !isIsland(r, c)) {
-        if (cellUnit.transportHp === undefined) {
-          cellUnit.transportHp = 30;
-        }
-
+        if (cellUnit.transportHp === undefined) cellUnit.transportHp = 30;
         let curHp = cellUnit.transportHp;
         let hpRatio = curHp / 30;
         let curAtk = Math.max(1, Math.round(5 * hpRatio));
@@ -586,11 +605,7 @@
         };
       }
 
-      let totalHp = 0;
-      let totalMaxHp = 0;
-      let totalBaseAtk = 0;
-      let maxVision = 0;
-
+      let totalHp = 0, totalMaxHp = 0, totalBaseAtk = 0, maxVision = 0;
       units.forEach(u => {
         totalHp += u.hp;
         totalMaxHp += u.maxHp;
@@ -600,12 +615,7 @@
 
       let hpRatio = totalMaxHp > 0 ? (totalHp / totalMaxHp) : 0;
       let currentAtk = Math.max(1, Math.round(totalBaseAtk * hpRatio));
-
-      let name = units[0].name;
-      if (units.length > 1) {
-        name = `${units[0].name}等(${units.length})`;
-      }
-
+      let name = units.length > 1 ? `${units[0].name}等(${units.length})` : units[0].name;
       let maxRange = (mainType === "sea" || mainType === "air") ? 2 : 1;
       if (isNuke) maxRange = 4;
 
@@ -630,7 +640,6 @@
     function calculateAttack(attacker, defender) {
       let baseAtk = attacker.currentAtk;
       let bonus = 0;
-
       const atkUnits = attacker.units || [attacker];
       const defUnits = defender ? (defender.units || [defender]) : [];
 
@@ -651,17 +660,10 @@
 
     function isPathBlocked(sr, sc, tr, tc, isAir) {
       if (isAir) return false;
-
-      const dr = tr - sr;
-      const dc = tc - sc;
-
+      const dr = tr - sr, dc = tc - sc;
       if (Math.abs(dr) === 2 || Math.abs(dc) === 2) {
-        const midR = sr + dr / 2;
-        const midC = sc + dc / 2;
-        
-        if (isIsland(midR, midC)) {
-          return true;
-        }
+        const midR = sr + dr / 2, midC = sc + dc / 2;
+        if (isIsland(midR, midC)) return true;
       }
       return false;
     }
@@ -675,11 +677,9 @@
       let maxDist = (myStats.type === "sea" || myStats.type === "air") ? 2 : 1;
 
       if (dist === 0 || dist > maxDist) return false;
-
       if (isPathBlocked(sr, sc, tr, tc, myStats.type === "air")) return false;
 
       const targetRawUnit = board[tr][tc];
-
       const isLandOrIsland = (tr <= 2) || (tr >= 10) || isIsland(tr, tc);
       if (myStats.type === "sea" && isLandOrIsland) return false;
 
@@ -690,17 +690,12 @@
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
         const targetUnits = targetRawUnit.units || [targetRawUnit];
 
-        if (myUnits.some(u => u.sub || u.isNuke) || targetUnits.some(u => u.sub || u.isNuke)) {
-          return false;
-        }
-
+        if (myUnits.some(u => u.sub || u.isNuke) || targetUnits.some(u => u.sub || u.isNuke)) return false;
         if (myUnits.length + targetUnits.length > 6) return false;
-
         return true;
       }
 
       if (targetRawUnit && targetRawUnit.owner !== currentTurn) return false;
-
       return true;
     }
 
@@ -712,8 +707,7 @@
       const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
 
       if (myUnits.some(u => u.forwardOnly)) {
-        const dr = tr - sr;
-        const dc = tc - sc;
+        const dr = tr - sr, dc = tc - sc;
         const isForward = (currentTurn === "axis" && dr < 0 && dc === 0) || (currentTurn === "allies" && dr > 0 && dc === 0);
         if (!isForward || Math.abs(dr) > 2) return false;
       } else {
@@ -729,15 +723,10 @@
       if (myStats.isSub) {
         const targetStats = getUnitStats(targetRawUnit, tr, tc);
         if (!targetStats) return false;
-        const isBattleship = targetStats.name.indexOf("戦艦") !== -1;
-        const isTransport = targetStats.isTransport;
-        if (!isBattleship && !isTransport) return false;
+        if (targetStats.name.indexOf("戦艦") === -1 && !targetStats.isTransport) return false;
       }
 
-      if (myStats.isTransport && !myStats.isNuke) {
-        return false;
-      }
-
+      if (myStats.isTransport && !myStats.isNuke) return false;
       return true;
     }
 
@@ -749,11 +738,7 @@
 
       const rawUnit = board[r][c];
       const splitBtn = document.getElementById("btn-split-cmd");
-      if (rawUnit && rawUnit.units && rawUnit.units.length > 1) {
-        splitBtn.style.display = "block";
-      } else {
-        splitBtn.style.display = "none";
-      }
+      splitBtn.style.display = (rawUnit && rawUnit.units && rawUnit.units.length > 1) ? "block" : "none";
 
       menu.style.left = `${rect.left - containerRect.left + 48}px`;
       menu.style.top = `${rect.top - containerRect.top}px`;
@@ -786,7 +771,6 @@
 
       const listEl = document.getElementById("split-list");
       listEl.innerHTML = "";
-
       rawUnit.units.forEach((u, idx) => {
         const item = document.createElement("label");
         item.className = "split-item";
@@ -806,9 +790,7 @@
     function confirmSplit(mode) {
       const checkboxes = document.querySelectorAll("#split-list input[type='checkbox']");
       const selectedIndices = [];
-      checkboxes.forEach(cb => {
-        if (cb.checked) selectedIndices.push(parseInt(cb.value));
-      });
+      checkboxes.forEach(cb => { if (cb.checked) selectedIndices.push(parseInt(cb.value)); });
 
       const { r, c } = selectedBoardPos;
       const rawUnit = board[r][c];
@@ -818,19 +800,14 @@
         return;
       }
 
-      if (selectedIndices.length === rawUnit.units.length) {
-        selectedSubUnits = null;
-      } else {
-        selectedSubUnits = selectedIndices.map(i => rawUnit.units[i]);
-      }
-
+      selectedSubUnits = (selectedIndices.length === rawUnit.units.length) ? null : selectedIndices.map(i => rawUnit.units[i]);
       document.getElementById("split-modal").style.display = "none";
       selectActionMode(mode);
     }
 
     function render() {
       const boardEl = document.getElementById("board");
-      if (currentTurn === "allies") {
+      if (gameMode === "pvp" && currentTurn === "allies") {
         boardEl.classList.add("rotated");
       } else {
         boardEl.classList.remove("rotated");
@@ -874,7 +851,6 @@
           }
 
           let rawUnit = board[r][c];
-
           if (rawUnit && isDead(rawUnit, r, c)) {
             board[r][c] = null;
             rawUnit = null;
@@ -882,7 +858,6 @@
 
           if (rawUnit) {
             const visible = isVisible(r, c, currentTurn);
-            
             if (rawUnit.owner === currentTurn || visible) {
               const displayUnit = getUnitStats(rawUnit, r, c);
               if (displayUnit) {
@@ -908,7 +883,6 @@
                   badge.innerText = unitCount;
                   cell.appendChild(badge);
                 }
-
                 cell.appendChild(unitEl);
               }
             }
@@ -931,7 +905,7 @@
         cardEl.innerHTML = `<strong>[${card.name}]</strong><br>HP: ${card.hp} / ATK: ${card.atk}`;
         
         cardEl.onclick = () => {
-          if (gameOver || isProcessingTurn) return;
+          if (gameOver || isProcessingTurn || (gameMode === "ai" && currentTurn === "allies")) return;
           if (selectedHandIndex === index) {
             selectedHandIndex = null;
           } else {
@@ -948,24 +922,17 @@
     }
 
     function handleCellClick(r, c) {
-      if (gameOver || isProcessingTurn) return;
+      if (gameOver || isProcessingTurn || (gameMode === "ai" && currentTurn === "allies")) return;
 
       if (selectedHandIndex !== null) {
         const card = hands[currentTurn][selectedHandIndex];
-
         const isMyLand = isMyLandTerritory(r, c, currentTurn);
         const isMyCoast = isCoastOfMyLand(r, c, currentTurn);
 
         if (card.type === "land" || card.type === "air") {
-          if (!isMyLand) {
-            alert("【配置不可】自軍が占領している陸地・島にしか配置できません。");
-            return;
-          }
+          if (!isMyLand) { alert("【配置不可】自軍占領地にしか配置できません。"); return; }
         } else if (card.type === "sea") {
-          if (!isMyCoast) {
-            alert("【配置不可】自軍占領地に隣接した沿岸（海）にしか配置できません。");
-            return;
-          }
+          if (!isMyCoast) { alert("【配置不可】自軍沿岸にしか配置できません。"); return; }
         }
 
         if (board[r][c] !== null) {
@@ -973,20 +940,14 @@
           if (target.owner !== currentTurn) { alert("敵のいるマスには配置できません"); return; }
           if (target.type === "hq") { alert("司令部には合体できません"); return; }
 
-          const targetCat = getCategory(target);
-          if (card.type !== targetCat) {
-            alert("異なる種類のユニットは組み合わせられません");
-            return;
-          }
-
+          if (card.type !== getCategory(target)) { alert("異なる種類のユニットは組み合わせられません"); return; }
           const targetUnits = target.units || [target];
 
           if (card.isNuke || card.sub || targetUnits.some(u => u.isNuke || u.sub)) {
-            alert("【制限】核および潜水艦は他のユニットと組み合わせる（合体させる）ことができません。");
+            alert("【制限】核および潜水艦は合体できません。");
             return;
           }
-
-          if (targetUnits.length >= 6) { alert("これ以上ユニットを組み合わせられません（最大6体）"); return; }
+          if (targetUnits.length >= 6) { alert("合体上限（最大6体）です"); return; }
 
           targetUnits.push({ ...card });
           target.units = targetUnits;
@@ -1006,26 +967,7 @@
       if (selectedBoardPos && actionMode === "move") {
         const { r: sr, c: sc } = selectedBoardPos;
         if (isValidMoveTarget(sr, sc, r, c)) {
-          const myRawUnit = board[sr][sc];
-          const targetRawUnit = board[r][c];
-
-          let movingUnits = selectedSubUnits ? selectedSubUnits : (myRawUnit.units || [myRawUnit]);
-
-          if (selectedSubUnits) {
-            myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u));
-          } else {
-            board[sr][sc] = null;
-          }
-
-          if (targetRawUnit && targetRawUnit.owner === currentTurn) {
-            const targetUnits = targetRawUnit.units || [targetRawUnit];
-            targetRawUnit.units = [...targetUnits, ...movingUnits];
-          } else {
-            board[r][c] = { owner: currentTurn, units: movingUnits };
-            if (r <= 2 || r >= 10 || isIsland(r, c)) {
-              landOwners[r][c] = currentTurn;
-            }
-          }
+          executeMove(sr, sc, r, c, selectedSubUnits);
           selectedBoardPos = null;
           selectedSubUnits = null;
           actionMode = null;
@@ -1039,115 +981,7 @@
       if (selectedBoardPos && actionMode === "attack") {
         const { r: sr, c: sc } = selectedBoardPos;
         if (isValidAttackTarget(sr, sc, r, c)) {
-          const myRawUnit = board[sr][sc];
-          const movingUnits = selectedSubUnits ? selectedSubUnits : (myRawUnit.units || [myRawUnit]);
-          
-          const myAttackerData = { owner: currentTurn, units: movingUnits };
-          const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
-          const targetRawUnit = board[r][c];
-
-          if (myStats.isNuke) {
-            alert(`💥【核ミサイル発射！】\n座標(${r}, ${c})の敵ターゲットにピンポイント核攻撃（200ダメージ）を実行！`);
-
-            applyDamage(targetRawUnit, 200, r, c);
-
-            if (isDead(targetRawUnit, r, c)) {
-              alert(`敵ターゲットを完全に消滅させました！`);
-              if (targetRawUnit.type === "hq") {
-                const victor = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
-                alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
-                gameOver = true;
-                stopTimer();
-              }
-              board[r][c] = null;
-            }
-
-            if (selectedSubUnits) {
-              myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u));
-              if (myRawUnit.units.length === 0) board[sr][sc] = null;
-            } else {
-              board[sr][sc] = null;
-            }
-
-            selectedBoardPos = null;
-            selectedSubUnits = null;
-            actionMode = null;
-            if (!gameOver) finishTurn();
-            else render();
-            return;
-          }
-
-          const targetStats = getUnitStats(targetRawUnit, r, c);
-          const dealAtk = calculateAttack(myStats, targetStats);
-
-          let counterAtk = 0;
-          let isCountered = false;
-
-          const dist = Math.abs(sr - r) + Math.abs(sc - c);
-          const targetCanReach = dist <= targetStats.maxRange;
-
-          if (!myStats.isSub && !targetStats.isTransport && targetCanReach) {
-            isCountered = Math.random() < 0.70;
-            if (isCountered) {
-              counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
-            }
-          }
-
-          let bonusMsg = dealAtk > myStats.currentAtk ? ` (特攻ボーナス!)` : "";
-          let counterMsg = "";
-
-          if (!targetCanReach) {
-            counterMsg = `\n(相手の攻撃範囲外からの攻撃のため、反撃を受けません！)`;
-          } else if (myStats.isSub) {
-            counterMsg = `\n(潜水艦からの攻撃のため、敵は反撃できません！)`;
-          } else if (targetStats.isTransport) {
-            counterMsg = `\n(敵は輸送船のため、反撃できません！)`;
-          } else if (isCountered) {
-            counterMsg = `\n(敵が反撃！ ${counterAtk} ダメージを受けました)`;
-          } else {
-            counterMsg = `\n(敵の反撃は発生しませんでした！)`;
-          }
-
-          alert(`【交戦！】\n敵に ${dealAtk} ダメージ${bonusMsg}を与えました！${counterMsg}`);
-
-          applyDamageToUnits(movingUnits, counterAtk);
-          applyDamage(targetRawUnit, dealAtk, r, c);
-
-          const aliveMovingUnits = movingUnits.filter(u => u.hp > 0);
-
-          if (selectedSubUnits) {
-            myRawUnit.units = myRawUnit.units.filter(u => !selectedSubUnits.includes(u)).concat(aliveMovingUnits);
-            if (myRawUnit.units.length === 0) board[sr][sc] = null;
-          } else {
-            myRawUnit.units = aliveMovingUnits;
-            if (myRawUnit.units.length === 0) board[sr][sc] = null;
-          }
-
-          const targetDead = isDead(targetRawUnit, r, c);
-
-          if (targetDead) {
-            alert(`敵部隊を撃破しました！`);
-            if (targetRawUnit.type === "hq") {
-              const winner = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
-              alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
-              gameOver = true;
-              stopTimer();
-            }
-
-            if (myStats.type !== "sea" && aliveMovingUnits.length > 0) {
-              if (selectedSubUnits) {
-                myRawUnit.units = myRawUnit.units.filter(u => !aliveMovingUnits.includes(u));
-                if (myRawUnit.units.length === 0) board[sr][sc] = null;
-              } else {
-                board[sr][sc] = null;
-              }
-              board[r][c] = { owner: currentTurn, units: aliveMovingUnits };
-              if (r <= 2 || r >= 10 || isIsland(r, c)) landOwners[r][c] = currentTurn;
-            } else {
-              board[r][c] = null;
-            }
-          }
-
+          executeAttack(sr, sc, r, c, selectedSubUnits);
           selectedBoardPos = null;
           selectedSubUnits = null;
           actionMode = null;
@@ -1178,6 +1012,113 @@
       }
     }
 
+    function executeMove(sr, sc, tr, tc, subUnits = null) {
+      const myRawUnit = board[sr][sc];
+      const targetRawUnit = board[tr][tc];
+      let movingUnits = subUnits ? subUnits : (myRawUnit.units || [myRawUnit]);
+
+      if (subUnits) {
+        myRawUnit.units = myRawUnit.units.filter(u => !subUnits.includes(u));
+      } else {
+        board[sr][sc] = null;
+      }
+
+      if (targetRawUnit && targetRawUnit.owner === currentTurn) {
+        const targetUnits = targetRawUnit.units || [targetRawUnit];
+        targetRawUnit.units = [...targetUnits, ...movingUnits];
+      } else {
+        board[tr][tc] = { owner: currentTurn, units: movingUnits };
+        if (tr <= 2 || tr >= 10 || isIsland(tr, tc)) {
+          landOwners[tr][tc] = currentTurn;
+        }
+      }
+    }
+
+    function executeAttack(sr, sc, tr, tc, subUnits = null) {
+      const myRawUnit = board[sr][sc];
+      const movingUnits = subUnits ? subUnits : (myRawUnit.units || [myRawUnit]);
+      const myAttackerData = { owner: currentTurn, units: movingUnits };
+      const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
+      const targetRawUnit = board[tr][tc];
+
+      if (myStats.isNuke) {
+        if (currentTurn === "axis" || gameMode === "pvp") {
+          alert(`💥【核ミサイル発射！】\n敵ターゲット(${tr}, ${tc})に200ダメージ！`);
+        }
+        applyDamage(targetRawUnit, 200, tr, tc);
+
+        if (isDead(targetRawUnit, tr, tc)) {
+          if (targetRawUnit.type === "hq") {
+            const victor = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
+            alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
+            gameOver = true;
+            stopTimer();
+          }
+          board[tr][tc] = null;
+        }
+
+        if (subUnits) {
+          myRawUnit.units = myRawUnit.units.filter(u => !subUnits.includes(u));
+          if (myRawUnit.units.length === 0) board[sr][sc] = null;
+        } else {
+          board[sr][sc] = null;
+        }
+        return;
+      }
+
+      const targetStats = getUnitStats(targetRawUnit, tr, tc);
+      const dealAtk = calculateAttack(myStats, targetStats);
+
+      let counterAtk = 0;
+      let isCountered = false;
+      const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
+      const targetCanReach = dist <= targetStats.maxRange;
+
+      if (!myStats.isSub && !targetStats.isTransport && targetCanReach) {
+        isCountered = Math.random() < 0.70;
+        if (isCountered) counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
+      }
+
+      if (currentTurn === "axis" || gameMode === "pvp") {
+        alert(`【交戦！】\n敵に ${dealAtk} ダメージを与えました！`);
+      }
+
+      applyDamageToUnits(movingUnits, counterAtk);
+      applyDamage(targetRawUnit, dealAtk, tr, tc);
+
+      const aliveMovingUnits = movingUnits.filter(u => u.hp > 0);
+
+      if (subUnits) {
+        myRawUnit.units = myRawUnit.units.filter(u => !subUnits.includes(u)).concat(aliveMovingUnits);
+        if (myRawUnit.units.length === 0) board[sr][sc] = null;
+      } else {
+        myRawUnit.units = aliveMovingUnits;
+        if (myRawUnit.units.length === 0) board[sr][sc] = null;
+      }
+
+      if (isDead(targetRawUnit, tr, tc)) {
+        if (targetRawUnit.type === "hq") {
+          const winner = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
+          alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
+          gameOver = true;
+          stopTimer();
+        }
+
+        if (myStats.type !== "sea" && aliveMovingUnits.length > 0) {
+          if (subUnits) {
+            myRawUnit.units = myRawUnit.units.filter(u => !aliveMovingUnits.includes(u));
+            if (myRawUnit.units.length === 0) board[sr][sc] = null;
+          } else {
+            board[sr][sc] = null;
+          }
+          board[tr][tc] = { owner: currentTurn, units: aliveMovingUnits };
+          if (tr <= 2 || tr >= 10 || isIsland(tr, tc)) landOwners[tr][tc] = currentTurn;
+        } else {
+          board[tr][tc] = null;
+        }
+      }
+    }
+
     function applyDamageToUnits(units, dmg) {
       let remainingDmg = dmg;
       for (let i = 0; i < units.length; i++) {
@@ -1199,7 +1140,6 @@
       }
 
       const stats = getUnitStats(rawUnit, r, c);
-
       if (stats && stats.isTransport) {
         if (rawUnit.transportHp === undefined) rawUnit.transportHp = 30;
         rawUnit.transportHp -= dmg;
@@ -1214,13 +1154,10 @@
     function isDead(rawUnit, r, c) {
       if (!rawUnit) return true;
       if (rawUnit.type === "hq") return rawUnit.hp <= 0;
-      
       if (rawUnit.transportHp !== undefined && (r >= 3 && r <= 9) && !isIsland(r, c)) {
         return rawUnit.transportHp <= 0;
       }
-
-      const units = rawUnit.units || [rawUnit];
-      return units.length === 0;
+      return (rawUnit.units || [rawUnit]).length === 0;
     }
 
     function finishTurn() {
@@ -1232,7 +1169,9 @@
         hands[currentTurn].push(getRandomCard());
       }
 
-      document.getElementById("wait-overlay").style.display = "flex";
+      if (gameMode === "pvp") {
+        document.getElementById("wait-overlay").style.display = "flex";
+      }
 
       setTimeout(() => {
         currentTurn = currentTurn === "axis" ? "allies" : "axis";
@@ -1243,11 +1182,122 @@
         isProcessingTurn = false;
         document.getElementById("wait-overlay").style.display = "none";
         render();
-        if (!gameOver) startTimer();
-      }, 1000);
+
+        if (!gameOver) {
+          if (gameMode === "ai" && currentTurn === "allies") {
+            processAITurn();
+          } else {
+            startTimer();
+          }
+        }
+      }, 800);
     }
 
-    initGame();
+    // --- 高度AI思考ロジック ---
+    function processAITurn() {
+      setTimeout(() => {
+        if (gameOver) return;
+        let aiDone = false;
+
+        // 1. 攻撃優先思考（HQ攻撃・決着、有利トレード、核使用）
+        let attackCandidates = [];
+        for (let r = 0; r < BOARD_SIZE; r++) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            const unit = board[r][c];
+            if (unit && unit.owner === "allies" && unit.type !== "hq") {
+              for (let tr = 0; tr < BOARD_SIZE; tr++) {
+                for (let tc = 0; tc < BOARD_SIZE; tc++) {
+                  if (isValidAttackTarget(r, c, tr, tc)) {
+                    const target = board[tr][tc];
+                    let score = 0;
+                    if (target.type === "hq") score += 1000;
+                    
+                    const myStats = getUnitStats(unit, r, c);
+                    const targetStats = getUnitStats(target, tr, tc);
+                    
+                    if (myStats.isNuke) score += 500;
+                    if (targetStats) score += targetStats.currentAtk;
+
+                    attackCandidates.push({ sr: r, sc: c, tr, tc, score });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        if (attackCandidates.length > 0) {
+          attackCandidates.sort((a, b) => b.score - a.score);
+          const bestAtk = attackCandidates[0];
+          executeAttack(bestAtk.sr, bestAtk.sc, bestAtk.tr, bestAtk.tc);
+          aiDone = true;
+        }
+
+        // 2. 移動・合体・進軍思考
+        if (!aiDone) {
+          let moveCandidates = [];
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+              const unit = board[r][c];
+              if (unit && unit.owner === "allies" && unit.type !== "hq") {
+                for (let tr = 0; tr < BOARD_SIZE; tr++) {
+                  for (let tc = 0; tc < BOARD_SIZE; tc++) {
+                    if (isValidMoveTarget(r, c, tr, tc)) {
+                      let score = 0;
+                      // 敵HQ(12,6)に近づく移動を高評価
+                      const currentDist = Math.abs(r - 12) + Math.abs(c - 6);
+                      const targetDist = Math.abs(tr - 12) + Math.abs(tc - 6);
+                      score += (currentDist - targetDist) * 10;
+
+                      // スタック合体も評価
+                      if (board[tr][tc] && board[tr][tc].owner === "allies") score += 15;
+                      // 島占領も評価
+                      if (isIsland(tr, tc) && landOwners[tr][tc] !== "allies") score += 20;
+
+                      moveCandidates.push({ sr: r, sc: c, tr, tc, score });
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          if (moveCandidates.length > 0) {
+            moveCandidates.sort((a, b) => b.score - a.score);
+            const bestMove = moveCandidates[0];
+            executeMove(bestMove.sr, bestMove.sc, bestMove.tr, bestMove.tc);
+            aiDone = true;
+          }
+        }
+
+        // 3. 手札からの召喚・配置思考
+        if (!aiDone && hands.allies.length > 0) {
+          for (let i = 0; i < hands.allies.length; i++) {
+            const card = hands.allies[i];
+            let placed = false;
+
+            for (let r = 0; r < BOARD_SIZE && !placed; r++) {
+              for (let c = 0; c < BOARD_SIZE && !placed; c++) {
+                const isMyLand = isMyLandTerritory(r, c, "allies");
+                const isMyCoast = isCoastOfMyLand(r, c, "allies");
+
+                if ((card.type !== "sea" && isMyLand) || (card.type === "sea" && isMyCoast)) {
+                  if (board[r][c] === null) {
+                    board[r][c] = { ...card, owner: "allies", units: [{ ...card }] };
+                    hands.allies.splice(i, 1);
+                    placed = true;
+                    aiDone = true;
+                  }
+                }
+              }
+            }
+            if (placed) break;
+          }
+        }
+
+        finishTurn();
+      }, 1000);
+    }
   </script>
 </body>
 </html>
