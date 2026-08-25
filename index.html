@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>大東亜戦術ボードゲーム Ver 4.4</title>
+  <title>大東亜戦術ボードゲーム Ver 5.0 (Minimax & DangerMap AI)</title>
   <style>
     body {
       font-family: sans-serif;
@@ -310,13 +310,13 @@
 </head>
 <body>
 
-  <h1>大東亜戦術ボードゲーム Ver 4.4</h1>
+  <h1>大東亜戦術ボードゲーム Ver 5.0</h1>
 
   <div id="mode-modal">
     <div class="modal-content">
       <h2 style="margin-top:0;">対戦モードを選択</h2>
       <button class="mode-btn btn-pvp" onclick="startGame('pvp')">👥 対人戦 (180度回転・制限時間あり)</button>
-      <button class="mode-btn btn-ai" onclick="startGame('ai')">🤖 対AI戦 (超攻勢リスク感知AI: 攻9/防1)</button>
+      <button class="mode-btn btn-ai" onclick="startGame('ai')">🧠 VS 思考エンジンAI (Minimax & 危険度マップ)</button>
     </div>
   </div>
 
@@ -409,7 +409,7 @@
     function startGame(mode) {
       gameMode = mode;
       document.getElementById("mode-modal").style.display = "none";
-      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 超攻勢AI (攻9:防1)";
+      document.getElementById("mode-text").innerText = mode === "pvp" ? "対人戦" : "VS 思考エンジンAI (Ver 5.0)";
 
       const timerSelect = document.getElementById("timer-select");
       if (mode === "ai") {
@@ -522,12 +522,9 @@
       return { ...CARD_TYPES[0] };
     }
 
-    // 視界評価ロジック（修正：潜水艦以外のユニットが消えないように厳密化）
-    function isVisible(r, c, viewerOwner) {
-      const targetUnit = board[r][c];
+    function isVisible(r, c, viewerOwner, currentBoard = board) {
+      const targetUnit = currentBoard[r][c];
       if (!targetUnit) return false;
-
-      // 司令部は常に視認可能
       if (targetUnit.type === "hq") return true;
 
       const targetUnits = targetUnit.units || [targetUnit];
@@ -535,7 +532,7 @@
 
       for (let br = 0; br < BOARD_SIZE; br++) {
         for (let bc = 0; bc < BOARD_SIZE; bc++) {
-          const unit = board[br][bc];
+          const unit = currentBoard[br][bc];
           if (unit && unit.owner === viewerOwner) {
             const stats = getUnitStats(unit, br, bc);
             const visionRange = stats ? stats.vision : 1;
@@ -545,7 +542,7 @@
               if (isPureSubmarine) {
                 if (stats.hasDestroyer || stats.hasAntiNavalAir) return true;
               } else {
-                return true; // 普通のユニット（戦艦など）は視界内なら絶対に見える
+                return true;
               }
             }
           }
@@ -554,20 +551,20 @@
       return false;
     }
 
-    function isMyLandTerritory(r, c, owner) {
-      if (landOwners[r][c] === owner) return true;
-      if (isIsland(r, c) && landOwners[r][c] === owner) return true;
+    function isMyLandTerritory(r, c, owner, currentLandOwners = landOwners) {
+      if (currentLandOwners[r][c] === owner) return true;
+      if (isIsland(r, c) && currentLandOwners[r][c] === owner) return true;
       return false;
     }
 
-    function isCoastOfMyLand(r, c, owner) {
-      if (landOwners[r][c] !== null || isIsland(r, c)) return false;
+    function isCoastOfMyLand(r, c, owner, currentLandOwners = landOwners) {
+      if (currentLandOwners[r][c] !== null || isIsland(r, c)) return false;
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           if (dr === 0 && dc === 0) continue;
           const nr = r + dr, nc = c + dc;
           if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
-            if (landOwners[nr][nc] === owner) return true;
+            if (currentLandOwners[nr][nc] === owner) return true;
           }
         }
       }
@@ -591,7 +588,7 @@
       if (!units || units.length === 0) return null;
 
       let mainType = units[0].type;
-      let isSub = units.every(u => u.sub); // 修正：全員が潜水艦の場合のみ完全潜水艦扱い
+      let isSub = units.every(u => u.sub);
       let hasDestroyer = units.some(u => u.destroyer);
       let hasAntiNavalAir = units.some(u => u.antiNaval);
       let isNuke = units.some(u => u.isNuke);
@@ -681,8 +678,8 @@
       return false;
     }
 
-    function isValidMoveTarget(sr, sc, tr, tc) {
-      const myRawUnit = board[sr][sc];
+    function isValidMoveTarget(sr, sc, tr, tc, currentTurnVal = currentTurn, currentBoard = board) {
+      const myRawUnit = currentBoard[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
 
       const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
@@ -692,11 +689,11 @@
       if (dist === 0 || dist > maxDist) return false;
       if (isPathBlocked(sr, sc, tr, tc, myStats.type === "air")) return false;
 
-      const targetRawUnit = board[tr][tc];
+      const targetRawUnit = currentBoard[tr][tc];
       const isLandOrIsland = (tr <= 2) || (tr >= 10) || isIsland(tr, tc);
       if (myStats.type === "sea" && isLandOrIsland) return false;
 
-      if (targetRawUnit && targetRawUnit.owner === currentTurn) {
+      if (targetRawUnit && targetRawUnit.owner === currentTurnVal) {
         if (targetRawUnit.type === "hq") return false;
         
         const myUnits = selectedSubUnits || myRawUnit.units || [myRawUnit];
@@ -718,12 +715,12 @@
         return true;
       }
 
-      if (targetRawUnit && targetRawUnit.owner !== currentTurn) return false;
+      if (targetRawUnit && targetRawUnit.owner !== currentTurnVal) return false;
       return true;
     }
 
-    function isValidAttackTarget(sr, sc, tr, tc) {
-      const myRawUnit = board[sr][sc];
+    function isValidAttackTarget(sr, sc, tr, tc, currentTurnVal = currentTurn, currentBoard = board) {
+      const myRawUnit = currentBoard[sr][sc];
       if (!myRawUnit || myRawUnit.type === "hq") return false;
 
       const myStats = getUnitStats(myRawUnit, sr, sc, selectedSubUnits);
@@ -731,17 +728,17 @@
 
       if (myUnits.some(u => u.forwardOnly)) {
         const dr = tr - sr, dc = tc - sc;
-        const isForward = (currentTurn === "axis" && dr < 0 && dc === 0) || (currentTurn === "allies" && dr > 0 && dc === 0);
+        const isForward = (currentTurnVal === "axis" && dr < 0 && dc === 0) || (currentTurnVal === "allies" && dr > 0 && dc === 0);
         if (!isForward || Math.abs(dr) > 2) return false;
       } else {
         const dist = Math.abs(sr - tr) + Math.abs(sc - tc);
         if (dist === 0 || dist > myStats.maxRange) return false;
       }
 
-      const targetRawUnit = board[tr][tc];
-      if (!targetRawUnit || targetRawUnit.owner === currentTurn) return false;
+      const targetRawUnit = currentBoard[tr][tc];
+      if (!targetRawUnit || targetRawUnit.owner === currentTurnVal) return false;
 
-      if (!isVisible(tr, tc, currentTurn)) return false;
+      if (!isVisible(tr, tc, currentTurnVal, currentBoard)) return false;
 
       if (myStats.isSub) {
         const targetStats = getUnitStats(targetRawUnit, tr, tc);
@@ -1058,56 +1055,58 @@
       }
     }
 
-    function executeMove(sr, sc, tr, tc, subUnits = null) {
-      const myRawUnit = board[sr][sc];
-      const targetRawUnit = board[tr][tc];
+    function executeMove(sr, sc, tr, tc, subUnits = null, currentBoard = board, currentLandOwners = landOwners) {
+      const myRawUnit = currentBoard[sr][sc];
+      const targetRawUnit = currentBoard[tr][tc];
       let movingUnits = subUnits ? subUnits : (myRawUnit.units || [myRawUnit]);
 
       if (subUnits) {
         myRawUnit.units = myRawUnit.units.filter(u => !subUnits.includes(u));
       } else {
-        board[sr][sc] = null;
+        currentBoard[sr][sc] = null;
       }
 
-      if (targetRawUnit && targetRawUnit.owner === currentTurn) {
+      if (targetRawUnit && targetRawUnit.owner === myRawUnit.owner) {
         const targetUnits = targetRawUnit.units || [targetRawUnit];
         targetRawUnit.units = [...targetUnits, ...movingUnits];
       } else {
-        board[tr][tc] = { owner: currentTurn, units: movingUnits };
+        currentBoard[tr][tc] = { owner: myRawUnit.owner, units: movingUnits };
         if (tr <= 2 || tr >= 10 || isIsland(tr, tc)) {
-          landOwners[tr][tc] = currentTurn;
+          currentLandOwners[tr][tc] = myRawUnit.owner;
         }
       }
     }
 
-    function executeAttack(sr, sc, tr, tc, subUnits = null) {
-      const myRawUnit = board[sr][sc];
+    function executeAttack(sr, sc, tr, tc, subUnits = null, currentBoard = board, currentLandOwners = landOwners, isSim = false) {
+      const myRawUnit = currentBoard[sr][sc];
       const movingUnits = subUnits ? subUnits : (myRawUnit.units || [myRawUnit]);
-      const myAttackerData = { owner: currentTurn, units: movingUnits };
+      const myAttackerData = { owner: myRawUnit.owner, units: movingUnits };
       const myStats = getUnitStats(myAttackerData, sr, sc, movingUnits);
-      const targetRawUnit = board[tr][tc];
+      const targetRawUnit = currentBoard[tr][tc];
 
       if (myStats.isNuke) {
-        if (currentTurn === "axis" || gameMode === "pvp") {
+        if (!isSim && (currentTurn === "axis" || gameMode === "pvp")) {
           alert(`💥【核ミサイル発射！】\n敵ターゲット(${tr}, ${tc})に 400 ダメージ！`);
         }
-        applyDamage(targetRawUnit, 400, tr, tc);
+        applyDamage(targetRawUnit, 400, tr, tc, currentBoard);
 
         if (isDead(targetRawUnit, tr, tc)) {
           if (targetRawUnit.type === "hq") {
-            const victor = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
-            alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
-            gameOver = true;
-            stopTimer();
+            if (!isSim) {
+              const victor = myRawUnit.owner === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
+              alert(`🎉【核による司令部壊滅】🎉\n${victor}の勝利です！`);
+              gameOver = true;
+              stopTimer();
+            }
           }
-          board[tr][tc] = null;
+          currentBoard[tr][tc] = null;
         }
 
         if (subUnits) {
           myRawUnit.units = myRawUnit.units.filter(u => !subUnits.includes(u));
-          if (myRawUnit.units.length === 0) board[sr][sc] = null;
+          if (myRawUnit.units.length === 0) currentBoard[sr][sc] = null;
         } else {
-          board[sr][sc] = null;
+          currentBoard[sr][sc] = null;
         }
         return;
       }
@@ -1121,46 +1120,48 @@
       const targetCanReach = dist <= targetStats.maxRange;
 
       if (!myStats.isSub && !targetStats.isTransport && targetCanReach) {
-        isCountered = Math.random() < 0.70;
+        isCountered = isSim ? true : Math.random() < 0.70;
         if (isCountered) counterAtk = Math.floor(calculateAttack(targetStats, myStats) / 2);
       }
 
-      if (currentTurn === "axis" || gameMode === "pvp") {
+      if (!isSim && (currentTurn === "axis" || gameMode === "pvp")) {
         alert(`【交戦！】\n敵に ${dealAtk} ダメージを与えました！`);
       }
 
       applyDamageToUnits(movingUnits, counterAtk);
-      applyDamage(targetRawUnit, dealAtk, tr, tc);
+      applyDamage(targetRawUnit, dealAtk, tr, tc, currentBoard);
 
       const aliveMovingUnits = movingUnits.filter(u => u.hp > 0);
 
       if (subUnits) {
         myRawUnit.units = myRawUnit.units.filter(u => !subUnits.includes(u)).concat(aliveMovingUnits);
-        if (myRawUnit.units.length === 0) board[sr][sc] = null;
+        if (myRawUnit.units.length === 0) currentBoard[sr][sc] = null;
       } else {
         myRawUnit.units = aliveMovingUnits;
-        if (myRawUnit.units.length === 0) board[sr][sc] = null;
+        if (myRawUnit.units.length === 0) currentBoard[sr][sc] = null;
       }
 
       if (isDead(targetRawUnit, tr, tc)) {
         if (targetRawUnit.type === "hq") {
-          const winner = currentTurn === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
-          alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
-          gameOver = true;
-          stopTimer();
+          if (!isSim) {
+            const winner = myRawUnit.owner === "axis" ? "枢軸国 (Axis)" : "連合国 (Allies)";
+            alert(`🎉【ゲーム終了】🎉\n${winner}が敵の司令部を陥落させました！${winner}の勝利です！`);
+            gameOver = true;
+            stopTimer();
+          }
         }
 
         if (myStats.type !== "sea" && aliveMovingUnits.length > 0) {
           if (subUnits) {
             myRawUnit.units = myRawUnit.units.filter(u => !aliveMovingUnits.includes(u));
-            if (myRawUnit.units.length === 0) board[sr][sc] = null;
+            if (myRawUnit.units.length === 0) currentBoard[sr][sc] = null;
           } else {
-            board[sr][sc] = null;
+            currentBoard[sr][sc] = null;
           }
-          board[tr][tc] = { owner: currentTurn, units: aliveMovingUnits };
-          if (tr <= 2 || tr >= 10 || isIsland(tr, tc)) landOwners[tr][tc] = currentTurn;
+          currentBoard[tr][tc] = { owner: myRawUnit.owner, units: aliveMovingUnits };
+          if (tr <= 2 || tr >= 10 || isIsland(tr, tc)) currentLandOwners[tr][tc] = myRawUnit.owner;
         } else {
-          board[tr][tc] = null;
+          currentBoard[tr][tc] = null;
         }
       }
     }
@@ -1178,7 +1179,7 @@
       }
     }
 
-    function applyDamage(rawUnit, dmg, r, c) {
+    function applyDamage(rawUnit, dmg, r, c, currentBoard = board) {
       if (!rawUnit || dmg <= 0) return;
       if (rawUnit.type === "hq") {
         rawUnit.hp -= dmg;
@@ -1236,10 +1237,10 @@
           if (!gameOver) startTimer();
         } else if (gameMode === "ai") {
           if (currentTurn === "allies") {
-            overlay.innerText = "🤖 超攻勢AI思考中 (攻90%:防10% 端警戒組み込み)...";
+            overlay.innerText = "🧠 Minimax & 危険度マップ AI思考中...";
             overlay.style.display = "flex";
             render();
-            processAITurn();
+            setTimeout(processAITurn, 100);
           } else {
             overlay.style.display = "none";
             render();
@@ -1255,207 +1256,280 @@
       }
     }
 
-    // --- AIロジック Ver 4.4 (攻90% / 防・端リスク10%) ---
-    function processAITurn() {
-      setTimeout(() => {
-        if (gameOver) return;
+    // --- Ver 5.0 AI: 危険度マップ & Minimax(Alpha-Beta) 思考エンジン ---
 
-        let bestAction = null;
-        let maxScore = -999999;
+    function cloneGameState(srcBoard, srcLand) {
+      const newBoard = srcBoard.map(row => row.map(cell => {
+        if (!cell) return null;
+        if (cell.type === "hq") return { ...cell };
+        return {
+          owner: cell.owner,
+          transportHp: cell.transportHp,
+          units: cell.units.map(u => ({ ...u }))
+        };
+      }));
+      const newLand = srcLand.map(row => [...row]);
+      return { board: newBoard, land: newLand };
+    }
 
-        const enemyHQ_R = 12;
-        const enemyHQ_C = 6;
-        const myHQ_R = 0;
-        const myHQ_C = 6;
+    // 1. 危険度・価値マップ（ヒートマップ）生成
+    function createDangerAndValueMap(stateBoard, owner) {
+      const dangerMap = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
+      const valueMap = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
+      const enemyOwner = owner === "allies" ? "axis" : "allies";
 
-        // 敵の端からの侵攻・接近ユニットのリスク検知
-        const flankThreats = [];
-        for (let r = 0; r < BOARD_SIZE; r++) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const u = board[r][c];
-            if (u && u.owner === "axis") {
-              // 端(列0,1,11,12)や自陣寄りに接近している敵をリスク認定
-              if (c <= 2 || c >= 10 || r <= 5) {
-                flankThreats.push({ r, c, unit: u });
-              }
-            }
-          }
-        }
+      const enemyHQ = enemyOwner === "axis" ? { r: 12, c: 6 } : { r: 0, c: 6 };
+      const myHQ = owner === "allies" ? { r: 0, c: 6 } : { r: 12, c: 6 };
 
-        // 1. 攻撃行動の評価
-        for (let r = 0; r < BOARD_SIZE; r++) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const unit = board[r][c];
-            if (unit && unit.owner === "allies" && unit.type !== "hq") {
-              for (let tr = 0; tr < BOARD_SIZE; tr++) {
-                for (let tc = 0; tc < BOARD_SIZE; tc++) {
-                  if (isValidAttackTarget(r, c, tr, tc)) {
-                    let attackScore = 0;
-                    let riskScore = 0;
-
-                    const target = board[tr][tc];
-                    const myStats = getUnitStats(unit, r, c);
-                    const targetStats = getUnitStats(target, tr, tc);
-
-                    // 敵司令部への攻撃は絶対最優先
-                    if (target.type === "hq") {
-                      attackScore += 300000;
-                    } else if (targetStats) {
-                      const estimatedDmg = calculateAttack(myStats, targetStats);
-                      attackScore += Math.min(estimatedDmg, targetStats.hp) * 25;
-                      if (estimatedDmg >= targetStats.hp) attackScore += 800;
-
-                      // 端から迫る脅威ユニットを排除する場合はボーナス（リスク解消）
-                      if (tc <= 2 || tc >= 10 || tr <= 5) {
-                        riskScore += 1200;
-                      }
-                    }
-
-                    if (myStats.isNuke) attackScore += 8000;
-
-                    const distToEnemyHQ = Math.abs(tr - enemyHQ_R) + Math.abs(tc - enemyHQ_C);
-                    attackScore += (25 - distToEnemyHQ) * 100;
-
-                    const totalScore = (attackScore * 0.9) + (riskScore * 0.1);
-
-                    if (totalScore > maxScore) {
-                      maxScore = totalScore;
-                      bestAction = { type: "attack", sr: r, sc: c, tr, tc };
-                    }
+      // 敵の射程内を危険エリアとしてマーキング
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const u = stateBoard[r][c];
+          if (u && u.owner === enemyOwner) {
+            const stats = getUnitStats(u, r, c);
+            if (stats) {
+              const rng = stats.maxRange;
+              for (let dr = -rng; dr <= rng; dr++) {
+                for (let dc = -rng; dc <= rng; dc++) {
+                  const tr = r + dr, tc = c + dc;
+                  if (tr >= 0 && tr < BOARD_SIZE && tc >= 0 && tc < BOARD_SIZE) {
+                    dangerMap[tr][tc] += stats.currentAtk;
                   }
                 }
               }
             }
           }
         }
+      }
 
-        // 2. 移動行動の評価（突撃 ＋ 端のリスク対応）
-        for (let r = 0; r < BOARD_SIZE; r++) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            const unit = board[r][c];
-            if (unit && unit.owner === "allies" && unit.type !== "hq") {
-              for (let tr = 0; tr < BOARD_SIZE; tr++) {
-                for (let tc = 0; tc < BOARD_SIZE; tc++) {
-                  if (isValidMoveTarget(r, c, tr, tc)) {
-                    let attackScore = 0;
-                    let riskScore = 0;
+      // 各マスの価値評価
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          let score = 0;
+          // 敵司令部に近いほど高評価
+          const distToEnemyHQ = Math.abs(r - enemyHQ.r) + Math.abs(c - enemyHQ.c);
+          score += (25 - distToEnemyHQ) * 8;
 
-                    const currentDist = Math.abs(r - enemyHQ_R) + Math.abs(c - enemyHQ_C);
-                    const newDist = Math.abs(tr - enemyHQ_R) + Math.abs(tc - enemyHQ_C);
+          // 中央の島
+          if (isIsland(r, c)) score += 35;
 
-                    // 敵司令部へ近づく移動を高評価
-                    attackScore += (currentDist - newDist) * 350;
-                    attackScore += (25 - newDist) * 120;
+          // 端のレーン（列 0, 1, 11, 12）で敵が迫っている場合は要警戒・補給ポイントに設定
+          if (c <= 1 || c >= 11) {
+            let flankThreat = false;
+            for (let er = 0; er < BOARD_SIZE; er++) {
+              const eu = stateBoard[er][c];
+              if (eu && eu.owner === enemyOwner) { flankThreat = true; break; }
+            }
+            if (flankThreat) score += 50; // 端の警戒領域スコアを引き上げる
+          }
 
-                    // 端から侵攻してくる敵の射程・ルートを塞ぐ動きの評価
-                    flankThreats.forEach(threat => {
-                      const distToThreat = Math.abs(tr - threat.r) + Math.abs(tc - threat.c);
-                      if (distToThreat <= 2) {
-                        riskScore += 600; // 端の敵の抑え込み
-                      }
-                    });
+          valueMap[r][c] = score;
+        }
+      }
 
-                    if (isIsland(tr, tc) && landOwners[tr][tc] !== "allies") {
-                      attackScore += 400;
-                    }
+      return { dangerMap, valueMap };
+    }
 
-                    const target = board[tr][tc];
-                    if (target && target.owner === "allies") {
-                      attackScore += 200;
-                    }
+    // 盤面総合評価関数
+    function evaluateBoardState(stateBoard, stateLand, owner) {
+      const enemyOwner = owner === "allies" ? "axis" : "allies";
+      let myScore = 0, enemyScore = 0;
 
-                    const totalScore = (attackScore * 0.9) + (riskScore * 0.1);
+      const myHQ = stateBoard[0][6];
+      const enemyHQ = stateBoard[12][6];
 
-                    if (totalScore > maxScore) {
-                      maxScore = totalScore;
-                      bestAction = { type: "move", sr: r, sc: c, tr, tc };
-                    }
+      if (!myHQ || myHQ.hp <= 0) return -999999;
+      if (!enemyHQ || enemyHQ.hp <= 0) return 999999;
+
+      myScore += myHQ.hp * 50;
+      enemyScore += enemyHQ.hp * 50;
+
+      const { dangerMap, valueMap } = createDangerAndValueMap(stateBoard, owner);
+
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const cellUnit = stateBoard[r][c];
+          if (cellUnit) {
+            const stats = getUnitStats(cellUnit, r, c);
+            if (stats && stats.type !== "hq") {
+              let unitVal = stats.hp * 2 + stats.currentAtk * 4;
+              if (stats.isNuke) unitVal += 2000;
+
+              if (cellUnit.owner === owner) {
+                myScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.4);
+              } else {
+                enemyScore += unitVal + valueMap[r][c] - (dangerMap[r][c] * 0.4);
+              }
+            }
+          }
+
+          if (stateLand[r][c] === owner) myScore += 15;
+          if (stateLand[r][c] === enemyOwner) enemyScore += 15;
+        }
+      }
+
+      return myScore - enemyScore;
+    }
+
+    // 合法手の生成
+    function generateLegalMoves(stateBoard, stateLand, stateHand, turnOwner) {
+      const moves = [];
+
+      // 1. 攻撃手
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const u = stateBoard[r][c];
+          if (u && u.owner === turnOwner && u.type !== "hq") {
+            for (let tr = 0; tr < BOARD_SIZE; tr++) {
+              for (let tc = 0; tc < BOARD_SIZE; tc++) {
+                if (isValidAttackTarget(r, c, tr, tc, turnOwner, stateBoard)) {
+                  moves.push({ type: "attack", sr: r, sc: c, tr, tc });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2. 移動手
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const u = stateBoard[r][c];
+          if (u && u.owner === turnOwner && u.type !== "hq") {
+            for (let tr = 0; tr < BOARD_SIZE; tr++) {
+              for (let tc = 0; tc < BOARD_SIZE; tc++) {
+                if (isValidMoveTarget(r, c, tr, tc, turnOwner, stateBoard)) {
+                  moves.push({ type: "move", sr: r, sc: c, tr, tc });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 3. 配置手
+      if (stateHand && stateHand.length > 0) {
+        for (let i = 0; i < stateHand.length; i++) {
+          const card = stateHand[i];
+          for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+              const isMyLand = isMyLandTerritory(r, c, turnOwner, stateLand);
+              const isMyCoast = isCoastOfMyLand(r, c, turnOwner, stateLand);
+
+              if ((card.type !== "sea" && isMyLand) || (card.type === "sea" && isMyCoast)) {
+                if (stateBoard[r][c] === null) {
+                  moves.push({ type: "deploy", handIndex: i, tr: r, tc: c, card });
+                } else if (stateBoard[r][c].owner === turnOwner && stateBoard[r][c].type !== "hq") {
+                  const targetUnits = stateBoard[r][c].units || [stateBoard[r][c]];
+                  if (targetUnits.length < 7 && !card.isNuke) {
+                    moves.push({ type: "deploy", handIndex: i, tr: r, tc: c, card });
                   }
                 }
               }
             }
           }
         }
+      }
 
-        // 3. 手札の召喚評価（前線突撃 ＆ 端の防衛配置）
-        if (hands.allies.length > 0) {
-          for (let i = 0; i < hands.allies.length; i++) {
-            const card = hands.allies[i];
+      return moves;
+    }
 
-            for (let r = 0; r < BOARD_SIZE; r++) {
-              for (let c = 0; c < BOARD_SIZE; c++) {
-                const isMyLand = isMyLandTerritory(r, c, "allies");
-                const isMyCoast = isCoastOfMyLand(r, c, "allies");
+    // Minimax法 (Alpha-Beta枝刈り)
+    function minimax(stateBoard, stateLand, depth, alpha, beta, isMaximizing, aiOwner) {
+      const currentTurnOwner = isMaximizing ? aiOwner : (aiOwner === "allies" ? "axis" : "allies");
 
-                if ((card.type !== "sea" && isMyLand) || (card.type === "sea" && isMyCoast)) {
-                  let attackScore = 0;
-                  let riskScore = 0;
+      if (depth === 0) {
+        return { score: evaluateBoardState(stateBoard, stateLand, aiOwner) };
+      }
 
-                  const distToEnemyHQ = Math.abs(r - enemyHQ_R) + Math.abs(c - enemyHQ_C);
+      const moves = generateLegalMoves(stateBoard, stateLand, isMaximizing ? hands[aiOwner] : hands[aiOwner === "allies" ? "axis" : "allies"], currentTurnOwner);
 
-                  if (board[r][c] === null) {
-                    attackScore += card.atk * 18;
-                    attackScore += (25 - distToEnemyHQ) * 150;
+      if (moves.length === 0) {
+        return { score: evaluateBoardState(stateBoard, stateLand, aiOwner) };
+      }
 
-                    // 端からの侵攻経路に手札から緊急展開するリスク評価
-                    if ((c <= 2 || c >= 10) && flankThreats.length > 0) {
-                      riskScore += 800;
-                    }
+      let bestMove = null;
 
-                    const totalScore = (attackScore * 0.9) + (riskScore * 0.1);
-
-                    if (totalScore > maxScore) {
-                      maxScore = totalScore;
-                      bestAction = { type: "deploy", handIndex: i, tr: r, tc: c };
-                    }
-                  } else if (board[r][c].owner === "allies" && board[r][c].type !== "hq") {
-                    const targetUnits = board[r][c].units || [board[r][c]];
-                    if (targetUnits.length < 7 && !card.isNuke) {
-                      attackScore += card.atk * 22;
-                      attackScore += (25 - distToEnemyHQ) * 180;
-
-                      if (c <= 2 || c >= 10) {
-                        riskScore += 600;
-                      }
-
-                      const totalScore = (attackScore * 0.9) + (riskScore * 0.1);
-
-                      if (totalScore > maxScore) {
-                        maxScore = totalScore;
-                        bestAction = { type: "deploy", handIndex: i, tr: r, tc: c };
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // 行動実行
-        if (bestAction) {
-          if (bestAction.type === "attack") {
-            executeAttack(bestAction.sr, bestAction.sc, bestAction.tr, bestAction.tc);
-          } else if (bestAction.type === "move") {
-            executeMove(bestAction.sr, bestAction.sc, bestAction.tr, bestAction.tc);
-          } else if (bestAction.type === "deploy") {
-            const card = hands.allies[bestAction.handIndex];
-            const tr = bestAction.tr;
-            const tc = bestAction.tc;
-
-            if (board[tr][tc] !== null) {
-              const targetUnits = board[tr][tc].units || [board[tr][tc]];
-              targetUnits.push({ ...card });
-              board[tr][tc].units = targetUnits;
+      if (isMaximizing) {
+        let maxEval = -Infinity;
+        for (const move of moves) {
+          const { board: nextBoard, land: nextLand } = cloneGameState(stateBoard, stateLand);
+          
+          if (move.type === "attack") executeAttack(move.sr, move.sc, move.tr, move.tc, null, nextBoard, nextLand, true);
+          else if (move.type === "move") executeMove(move.sr, move.sc, move.tr, move.tc, null, nextBoard, nextLand);
+          else if (move.type === "deploy") {
+            if (nextBoard[move.tr][move.tc] !== null) {
+              nextBoard[move.tr][move.tc].units.push({ ...move.card });
             } else {
-              board[tr][tc] = { ...card, owner: "allies", units: [{ ...card }] };
+              nextBoard[move.tr][move.tc] = { ...move.card, owner: currentTurnOwner, units: [{ ...move.card }] };
             }
-            hands.allies.splice(bestAction.handIndex, 1);
           }
-        }
 
-        finishTurn();
-      }, 500);
+          const result = minimax(nextBoard, nextLand, depth - 1, alpha, beta, false, aiOwner);
+          if (result.score > maxEval) {
+            maxEval = result.score;
+            bestMove = move;
+          }
+          alpha = Math.max(alpha, result.score);
+          if (beta <= alpha) break; // Alpha枝刈り
+        }
+        return { score: maxEval, move: bestMove };
+      } else {
+        let minEval = Infinity;
+        for (const move of moves) {
+          const { board: nextBoard, land: nextLand } = cloneGameState(stateBoard, stateLand);
+
+          if (move.type === "attack") executeAttack(move.sr, move.sc, move.tr, move.tc, null, nextBoard, nextLand, true);
+          else if (move.type === "move") executeMove(move.sr, move.sc, move.tr, move.tc, null, nextBoard, nextLand);
+          else if (move.type === "deploy") {
+            if (nextBoard[move.tr][move.tc] !== null) {
+              nextBoard[move.tr][move.tc].units.push({ ...move.card });
+            } else {
+              nextBoard[move.tr][move.tc] = { ...move.card, owner: currentTurnOwner, units: [{ ...move.card }] };
+            }
+          }
+
+          const result = minimax(nextBoard, nextLand, depth - 1, alpha, beta, true, aiOwner);
+          if (result.score < minEval) {
+            minEval = result.score;
+            bestMove = move;
+          }
+          beta = Math.min(beta, result.score);
+          if (beta <= alpha) break; // Beta枝刈り
+        }
+        return { score: minEval, move: bestMove };
+      }
+    }
+
+    function processAITurn() {
+      if (gameOver) return;
+
+      // 探査深さ2で最善手を計算
+      const result = minimax(board, landOwners, 2, -Infinity, Infinity, true, "allies");
+      const bestMove = result.move;
+
+      if (bestMove) {
+        if (bestMove.type === "attack") {
+          executeAttack(bestMove.sr, bestMove.sc, bestMove.tr, bestMove.tc);
+        } else if (bestMove.type === "move") {
+          executeMove(bestMove.sr, bestMove.sc, bestMove.tr, bestMove.tc);
+        } else if (bestMove.type === "deploy") {
+          const card = hands.allies[bestMove.handIndex];
+          const tr = bestMove.tr;
+          const tc = bestMove.tc;
+
+          if (board[tr][tc] !== null) {
+            const targetUnits = board[tr][tc].units || [board[tr][tc]];
+            targetUnits.push({ ...card });
+            board[tr][tc].units = targetUnits;
+          } else {
+            board[tr][tc] = { ...card, owner: "allies", units: [{ ...card }] };
+          }
+          hands.allies.splice(bestMove.handIndex, 1);
+        }
+      }
+
+      finishTurn();
     }
   </script>
 </body>
